@@ -4,16 +4,12 @@
 
 #include <algorithm>
 
-namespace {
-
-QColor mix(const QColor &a, const QColor &b, qreal t)
+QColor EditorTheme::mix(const QColor &a, const QColor &b, qreal t)
 {
     return QColor::fromRgbF(float(a.redF() * (1 - t) + b.redF() * t),
                             float(a.greenF() * (1 - t) + b.greenF() * t),
                             float(a.blueF() * (1 - t) + b.blueF() * t));
 }
-
-} // namespace
 
 qreal EditorTheme::headingPointSize(int level) const
 {

@@ -47,7 +47,8 @@ jobs:
         run: ctest --preset release
 
       - name: Install
-        run: cmake --install build/release --prefix dist
+        # Qt's deploy script needs an absolute install prefix.
+        run: cmake --install build/release --prefix "${{ github.workspace }}/dist"
 
       - uses: actions/upload-artifact@v4
         with:

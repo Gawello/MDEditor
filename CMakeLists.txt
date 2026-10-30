@@ -18,6 +18,7 @@ include(CTest)
 add_library(mdcore STATIC
     src/markdown/BlockParser.cpp
     src/markdown/InlineParser.cpp
+    src/markdown/TableParser.cpp
 )
 target_include_directories(mdcore PUBLIC src)
 
@@ -27,7 +28,11 @@ if(MDEDITOR_BUILD_APP)
 
     qt_add_executable(MDEditor WIN32
         src/main.cpp
+        src/app/EditorTab.cpp src/app/EditorTab.h
         src/app/MainWindow.cpp src/app/MainWindow.h
+        src/app/RecentFiles.cpp src/app/RecentFiles.h
+        src/app/TabCloseButton.cpp src/app/TabCloseButton.h
+        src/app/TablePicker.cpp src/app/TablePicker.h
         src/document/Document.cpp src/document/Document.h
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
@@ -36,6 +41,27 @@ if(MDEDITOR_BUILD_APP)
     )
     target_link_libraries(MDEditor PRIVATE mdcore Qt6::Widgets)
     target_compile_definitions(MDEditor PRIVATE MDEDITOR_VERSION="${PROJECT_VERSION}")
+
+    if(WIN32)
+        # Make the build directory runnable as is (from an IDE or by double click): copy the Qt and
+        # compiler runtime DLLs next to the executable and point Qt at its plugins via qt.conf.
+        set(runtime_dlls "")
+        if(MINGW)
+            get_filename_component(compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            foreach(dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+                if(EXISTS "${compiler_dir}/${dll}")
+                    list(APPEND runtime_dlls "${compiler_dir}/${dll}")
+                endif()
+            endforeach()
+        endif()
+        add_custom_command(TARGET MDEditor POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:MDEditor> ${runtime_dlls} $<TARGET_FILE_DIR:MDEditor>
+            COMMAND_EXPAND_LISTS
+        )
+        file(GENERATE OUTPUT "$<TARGET_FILE_DIR:MDEditor>/qt.conf"
+            CONTENT "[Paths]\nPrefix=${QT6_INSTALL_PREFIX}\n")
+    endif()
 
     include(GNUInstallDirs)
     install(TARGETS MDEditor

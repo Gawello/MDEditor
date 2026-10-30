@@ -21,9 +21,15 @@ signals:
     void fileActivated(const QString &path);
     void openFolderRequested();
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
+    void applyStyle();
+
     QFileSystemModel *m_model;
     QTreeView *m_tree;
     QLabel *m_title;
     QString m_root;
+    bool m_applyingStyle = false;
 };

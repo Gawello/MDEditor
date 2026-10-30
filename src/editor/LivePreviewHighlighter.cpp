@@ -1,10 +1,43 @@
 #include "editor/LivePreviewHighlighter.h"
 
 #include "markdown/InlineParser.h"
+#include "markdown/TableParser.h"
 
 #include <QTextDocument>
+#include <QTimer>
+
+#include <vector>
 
 using md::BlockType;
+
+md::BlockType blockType(const QTextBlock &block)
+{
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    return data ? data->info.type : BlockType::Paragraph;
+}
+
+bool isTableBlock(const QTextBlock &block)
+{
+    return block.isValid() && md::isTableType(blockType(block));
+}
+
+QTextBlock tableHeader(QTextBlock block)
+{
+    while (blockType(block) != BlockType::TableHeader && isTableBlock(block.previous()))
+        block = block.previous();
+    return block;
+}
+
+QTextBlock tableEnd(QTextBlock block)
+{
+    while (block.next().isValid()) {
+        const BlockType next = blockType(block.next());
+        if (next != BlockType::TableDelimiter && next != BlockType::TableRow)
+            break;
+        block = block.next();
+    }
+    return block;
+}
 
 LivePreviewHighlighter::LivePreviewHighlighter(QTextDocument *document, const EditorTheme *theme)
     : QSyntaxHighlighter(document)
@@ -12,17 +45,40 @@ LivePreviewHighlighter::LivePreviewHighlighter(QTextDocument *document, const Ed
 {
 }
 
-void LivePreviewHighlighter::setActiveBlock(int blockNumber)
+bool LivePreviewHighlighter::setActiveBlock(int blockNumber)
 {
-    if (blockNumber == m_activeBlock)
-        return;
-    const int previous = m_activeBlock;
-    m_activeBlock = blockNumber;
-    for (const int number : {previous, blockNumber}) {
-        const QTextBlock block = document()->findBlockByNumber(number);
-        if (block.isValid())
-            rehighlightBlock(block);
+    int first = -1;
+    int last = -1;
+    const QTextBlock block = document()->findBlockByNumber(blockNumber);
+    if (isTableBlock(block)) {
+        first = tableHeader(block).blockNumber();
+        last = tableEnd(block).blockNumber();
     }
+    if (blockNumber == m_activeBlock && first == m_tableFirst && last == m_tableLast)
+        return false;
+
+    std::vector<int> dirty{m_activeBlock, blockNumber};
+    if (first != m_tableFirst || last != m_tableLast) {
+        for (int i = m_tableFirst; i >= 0 && i <= m_tableLast; ++i)
+            dirty.push_back(i);
+        for (int i = first; i >= 0 && i <= last; ++i)
+            dirty.push_back(i);
+    }
+    m_activeBlock = blockNumber;
+    m_tableFirst = first;
+    m_tableLast = last;
+
+    for (const int number : dirty) {
+        const QTextBlock b = document()->findBlockByNumber(number);
+        if (b.isValid())
+            rehighlightBlock(b);
+    }
+    return true;
+}
+
+bool LivePreviewHighlighter::isActive(int blockNumber) const
+{
+    return blockNumber == m_activeBlock || (m_tableFirst >= 0 && blockNumber >= m_tableFirst && blockNumber <= m_tableLast);
 }
 
 QTextCharFormat LivePreviewHighlighter::dimmed(QTextCharFormat format) const
@@ -63,7 +119,10 @@ QTextCharFormat LivePreviewHighlighter::codeFormat() const
 
 void LivePreviewHighlighter::highlightBlock(const QString &text)
 {
-    const auto result = md::parseLine(toView(text), md::FenceState::decode(previousBlockState()));
+    const QTextBlock next = currentBlock().next();
+    const QString nextText = next.isValid() ? next.text() : QString();
+    const auto nextLine = next.isValid() ? std::optional(toView(nextText)) : std::nullopt;
+    const auto result = md::parseLine(toView(text), md::BlockState::decode(previousBlockState()), nextLine);
     setCurrentBlockState(result.next.encode());
 
     auto *data = static_cast<BlockData *>(currentBlockUserData());
@@ -72,9 +131,10 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
         setCurrentBlockUserData(data);
     }
     data->info = result.info;
+    recheckPreviousBlock(text);
 
     const md::BlockInfo &b = result.info;
-    const bool active = currentBlock().blockNumber() == m_activeBlock;
+    const bool active = isActive(currentBlock().blockNumber());
     const int length = int(text.size());
 
     switch (b.type) {
@@ -89,6 +149,11 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
         return;
     case BlockType::HorizontalRule:
         setFormat(0, length, active ? dimmed({}) : invisible({}));
+        return;
+    case BlockType::TableHeader:
+    case BlockType::TableDelimiter:
+    case BlockType::TableRow:
+        highlightTableRow(text, b.type, active);
         return;
     default:
         break;
@@ -128,6 +193,72 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
         setFormat(b.contentStart, length - b.contentStart, content);
         applyInline(text.mid(b.contentStart), b.contentStart, content, active);
     }
+}
+
+// Outside of the active table the text is hidden and the editor paints a grid instead;
+// the delimiter row collapses to (almost) no height.
+void LivePreviewHighlighter::highlightTableRow(const QString &text, md::BlockType type, bool active)
+{
+    const int length = int(text.size());
+    if (!active) {
+        if (type == BlockType::TableDelimiter) {
+            setFormat(0, length, collapsed({}));
+            return;
+        }
+        setFormat(0, length, invisible({}));
+        // One taller (invisible) character gives the painted row some vertical padding.
+        QTextCharFormat tall = invisible({});
+        tall.setFontPointSize(m_theme->baseFont.pointSizeF() * 1.7);
+        setFormat(0, 1, tall);
+        return;
+    }
+    if (type == BlockType::TableDelimiter) {
+        setFormat(0, length, dimmed({}));
+        return;
+    }
+
+    QTextCharFormat base;
+    if (type == BlockType::TableHeader)
+        base.setFontWeight(QFont::Bold);
+    setFormat(0, length, base);
+
+    const md::TableRow row = md::splitTableRow(toView(text));
+    for (const int pipe : row.pipes)
+        setFormat(pipe, 1, dimmed(base));
+    for (const md::TableCell &cell : row.cells) {
+        if (cell.end > cell.start)
+            applyInline(text.mid(cell.start, cell.end - cell.start), cell.start, base, true);
+    }
+}
+
+// Whether a line is a table header depends on the line below it. When this line changes in a way
+// that changes the previous line's classification, re-highlight the previous line (deferred,
+// since we're in the middle of highlighting).
+void LivePreviewHighlighter::recheckPreviousBlock(const QString &text)
+{
+    const QTextBlock previous = currentBlock().previous();
+    if (!previous.isValid() || !previous.userData())
+        return;
+    const QString previousText = previous.text();
+    if (!previousText.contains(u'|'))
+        return;
+
+    const QTextBlock beforePrevious = previous.previous();
+    const auto state = md::BlockState::decode(beforePrevious.isValid() ? beforePrevious.userState() : -1);
+    const BlockType expected = md::parseLine(toView(previousText), state, toView(text)).info.type;
+    if (expected == blockType(previous))
+        return;
+
+    const int number = previous.blockNumber();
+    QTimer::singleShot(0, this, [this, number] {
+        const QTextBlock block = document()->findBlockByNumber(number);
+        if (block.isValid())
+            rehighlightBlock(block);
+        // The table under the cursor may have appeared or disappeared.
+        const int active = m_activeBlock;
+        m_activeBlock = -2;
+        setActiveBlock(active);
+    });
 }
 
 void LivePreviewHighlighter::applyInline(const QString &text, int offset, const QTextCharFormat &base,

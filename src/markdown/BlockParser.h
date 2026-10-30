@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 namespace md {
@@ -16,17 +17,28 @@ enum class BlockType {
     FenceClose,
     CodeLine,
     HorizontalRule,
+    TableHeader,
+    TableDelimiter,
+    TableRow,
 };
+
+inline bool isTableType(BlockType type)
+{
+    return type == BlockType::TableHeader || type == BlockType::TableDelimiter || type == BlockType::TableRow;
+}
 
 // State carried from one line to the next. The editor stores it in
 // QTextBlock::userState, so it has to round-trip through a single int.
-struct FenceState {
+struct BlockState {
+    enum class Table { None, AfterHeader, Body };
+
     char16_t fenceChar = 0; // 0 = outside of a fenced code block
     int fenceLength = 0;
+    Table table = Table::None;
 
-    bool inside() const { return fenceChar != 0; }
-    int encode() const; // -1 when outside (QSyntaxHighlighter's default state)
-    static FenceState decode(int state);
+    bool inFence() const { return fenceChar != 0; }
+    int encode() const; // -1 for the default state (QSyntaxHighlighter's initial value)
+    static BlockState decode(int state);
 };
 
 struct BlockInfo {
@@ -50,10 +62,12 @@ struct BlockInfo {
 
 struct LineResult {
     BlockInfo info;
-    FenceState next;
+    BlockState next;
 };
 
-// Classifies a single line of Markdown. `state` is the state left by the previous line.
-LineResult parseLine(std::u16string_view line, FenceState state);
+// Classifies a single line of Markdown. `state` is the state left by the previous line;
+// `nextLine` is needed to recognize table headers (which must be followed by a delimiter row).
+LineResult parseLine(std::u16string_view line, BlockState state,
+                     std::optional<std::u16string_view> nextLine = std::nullopt);
 
 } // namespace md

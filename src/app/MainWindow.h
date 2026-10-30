@@ -1,12 +1,14 @@
 #pragma once
 
-#include "document/Document.h"
-
 #include <QMainWindow>
 
+class EditorTab;
 class FolderPanel;
 class MarkdownEditor;
+class QMenu;
 class QSplitter;
+class QTabWidget;
+class QToolButton;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -14,32 +16,46 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
-    // Opens `file` if given, otherwise restores the previous session.
-    void restoreSession(const QString &file);
+    // Opens `files` if given, otherwise restores the tabs of the previous session.
+    void restoreSession(const QStringList &files);
     bool openFile(const QString &path);
     void openFolder(const QString &path);
 
 protected:
+    void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void createMenus();
+    void applyStyle();
+    EditorTab *currentTab() const;
+    EditorTab *tabAt(int index) const;
+    MarkdownEditor *currentEditor() const;
+    int findTab(const QString &path) const;
+    EditorTab *addTab();
+    bool closeTab(int index);
     void newFile();
     void openFileDialog();
     void openFolderDialog();
-    bool save();
-    bool saveAs();
-    bool saveTo(const QString &path);
-    bool maybeSave();
     void openFiles(const QStringList &paths);
-    void updateTitle();
+    bool save(EditorTab *tab);
+    bool saveAs(EditorTab *tab);
+    bool saveTo(EditorTab *tab, const QString &path);
+    bool maybeSave(EditorTab *tab);
+    void updateTabTitle(EditorTab *tab);
+    void updateWindowTitle();
+    void populateRecentMenu();
+    void showTablePicker(const QPoint &globalPos, bool alignRight);
+    QIcon tableIcon() const;
     QString dialogDirectory() const;
     void about();
 
-    MarkdownEditor *m_editor;
+    QTabWidget *m_tabs;
     FolderPanel *m_folderPanel;
     QSplitter *m_splitter;
-    Document m_document;
+    QMenu *m_recentMenu = nullptr;
+    QToolButton *m_tableButton = nullptr;
 };

@@ -81,34 +81,69 @@ TEST_CASE(fenced_code)
     auto open = md::parseLine(u"```cpp", {});
     CHECK(open.info.type == BlockType::FenceOpen);
     CHECK(open.info.contentStart == 3);
-    CHECK(open.next.inside());
+    CHECK(open.next.inFence());
 
     auto inner = md::parseLine(u"# not a heading", open.next);
     CHECK(inner.info.type == BlockType::CodeLine);
-    CHECK(inner.next.inside());
+    CHECK(inner.next.inFence());
 
     CHECK(md::parseLine(u"~~~", open.next).info.type == BlockType::CodeLine);
     CHECK(md::parseLine(u"``", open.next).info.type == BlockType::CodeLine);
 
     auto close = md::parseLine(u"````", open.next);
     CHECK(close.info.type == BlockType::FenceClose);
-    CHECK(!close.next.inside());
+    CHECK(!close.next.inFence());
 
     CHECK(md::parseLine(u"``` a`b", {}).info.type == BlockType::Paragraph);
     CHECK(md::parseLine(u"~~~ a`b", {}).info.type == BlockType::FenceOpen);
 }
 
-TEST_CASE(fence_state_roundtrip)
+TEST_CASE(block_state_roundtrip)
 {
-    CHECK(md::FenceState{}.encode() == -1);
-    CHECK(!md::FenceState::decode(-1).inside());
+    CHECK(md::BlockState{}.encode() == -1);
+    CHECK(!md::BlockState::decode(-1).inFence());
 
-    const md::FenceState tilde{u'~', 5};
-    const auto decoded = md::FenceState::decode(tilde.encode());
+    const md::BlockState tilde{u'~', 5};
+    const auto decoded = md::BlockState::decode(tilde.encode());
     CHECK(decoded.fenceChar == u'~');
     CHECK(decoded.fenceLength == 5);
 
-    const auto backtick = md::FenceState::decode(md::FenceState{u'`', 3}.encode());
+    const auto backtick = md::BlockState::decode(md::BlockState{u'`', 3}.encode());
     CHECK(backtick.fenceChar == u'`');
     CHECK(backtick.fenceLength == 3);
+
+    using Table = md::BlockState::Table;
+    for (const Table table : {Table::AfterHeader, Table::Body}) {
+        const auto t = md::BlockState::decode(md::BlockState{0, 0, table}.encode());
+        CHECK(t.table == table);
+        CHECK(!t.inFence());
+    }
+}
+
+TEST_CASE(tables)
+{
+    const auto header = md::parseLine(u"| a | b |", {}, u"|---|:-:|");
+    CHECK(header.info.type == BlockType::TableHeader);
+
+    const auto delimiter = md::parseLine(u"|---|:-:|", header.next);
+    CHECK(delimiter.info.type == BlockType::TableDelimiter);
+
+    const auto row = md::parseLine(u"| 1 | 2 |", delimiter.next);
+    CHECK(row.info.type == BlockType::TableRow);
+    CHECK(md::parseLine(u"x | y", row.next).info.type == BlockType::TableRow);
+
+    const auto end = md::parseLine(u"", row.next);
+    CHECK(end.info.type == BlockType::Blank);
+    CHECK(end.next.table == md::BlockState::Table::None);
+    CHECK(md::parseLine(u"no pipes", row.next).info.type == BlockType::Paragraph);
+
+    // Column count must match, and the header needs a delimiter row below it.
+    CHECK(md::parseLine(u"| a | b |", {}, u"|---|").info.type == BlockType::Paragraph);
+    CHECK(md::parseLine(u"| a | b |", {}, u"| x | y |").info.type == BlockType::Paragraph);
+    CHECK(md::parseLine(u"| a | b |", {}).info.type == BlockType::Paragraph);
+    CHECK(md::parseLine(u"| --- |", {}).info.type == BlockType::Paragraph);
+
+    // Code fences win over tables.
+    md::BlockState fence{u'`', 3};
+    CHECK(md::parseLine(u"| a | b |", fence, u"|---|---|").info.type == BlockType::CodeLine);
 }

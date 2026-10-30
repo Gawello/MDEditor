@@ -14,13 +14,13 @@ int main(int argc, char *argv[])
     parser.setApplicationDescription(QStringLiteral("Markdown editor with live preview"));
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument(QStringLiteral("file"), QStringLiteral("Markdown file to open."));
+    parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Markdown files to open."),
+                                 QStringLiteral("[files...]"));
     parser.process(app);
 
     MainWindow window;
     window.show();
-    const QStringList files = parser.positionalArguments();
-    window.restoreSession(files.isEmpty() ? QString() : files.first());
+    window.restoreSession(parser.positionalArguments());
 
     return app.exec();
 }

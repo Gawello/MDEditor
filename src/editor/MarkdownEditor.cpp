@@ -16,6 +16,8 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <limits>
+#include <numeric>
 
 using md::BlockType;
 
@@ -59,13 +61,7 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     m_theme = EditorTheme::fromPalette(palette(), font());
     m_highlighter = new LivePreviewHighlighter(document(), &m_theme);
 
-    connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
-        const int block = textCursor().blockNumber();
-        if (block != m_highlighter->activeBlock()) {
-            m_highlighter->setActiveBlock(block);
-            viewport()->update();
-        }
-    });
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
 
     applyTheme();
     document()->setModified(false); // setDocumentMargin() counts as a modification
@@ -83,8 +79,13 @@ QString MarkdownEditor::markdown() const
 void MarkdownEditor::setMarkdown(const QString &text)
 {
     setPlainText(text);
-    m_highlighter->setActiveBlock(textCursor().blockNumber());
-    viewport()->update();
+    refreshActiveBlock();
+}
+
+void MarkdownEditor::refreshActiveBlock()
+{
+    if (m_highlighter->setActiveBlock(textCursor().blockNumber()))
+        viewport()->update();
 }
 
 void MarkdownEditor::toggleWrap(const QString &marker)
@@ -138,6 +139,14 @@ bool MarkdownEditor::event(QEvent *event)
         wheelEvent(static_cast<QWheelEvent *>(event));
         return true;
     }
+    // Leave Ctrl+Tab / Ctrl+Shift+Tab to the window's tab switching shortcuts.
+    if (event->type() == QEvent::ShortcutOverride) {
+        const auto *key = static_cast<QKeyEvent *>(event);
+        if ((key->modifiers() & Qt::ControlModifier) && (key->key() == Qt::Key_Tab || key->key() == Qt::Key_Backtab)) {
+            event->ignore();
+            return false;
+        }
+    }
     return QPlainTextEdit::event(event);
 }
 
@@ -146,11 +155,12 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
     const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
     const int key = event->key();
 
-    if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier && continueList())
+    if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier
+        && (tableEnter() || continueList()))
         return;
-    if (key == Qt::Key_Tab && modifiers == Qt::NoModifier && indentListItem(false))
+    if (key == Qt::Key_Tab && modifiers == Qt::NoModifier && (moveToTableCell(false) || indentListItem(false)))
         return;
-    if (key == Qt::Key_Backtab && indentListItem(true))
+    if (key == Qt::Key_Backtab && (moveToTableCell(true) || indentListItem(true)))
         return;
 
     QPlainTextEdit::keyPressEvent(event);
@@ -165,7 +175,7 @@ void MarkdownEditor::mousePressEvent(QMouseEvent *event)
                 openLink(*target);
                 return;
             }
-        } else if (toggleTaskAt(pos)) {
+        } else if (toggleTaskAt(pos) || focusTableCellAt(pos)) {
             return;
         }
     }
@@ -208,12 +218,24 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
     // Decorations replacing hidden markers go on top.
     QPainter painter(viewport());
     painter.setRenderHint(QPainter::Antialiasing);
+    const QTextBlock cursorBlock = textCursor().block();
+    const int cursorTable = isTableBlock(cursorBlock) ? tableHeader(cursorBlock).blockNumber() : -1;
+    int skipUntil = -1; // last block of a table that has already been handled
     for (QTextBlock block = firstVisibleBlock(); block.isValid(); block = block.next()) {
         const QRectF r = blockBoundingGeometry(block).translated(offset);
         if (r.top() > area.bottom())
             break;
         const auto *data = static_cast<BlockData *>(block.userData());
-        if (!data || !block.isVisible() || block.blockNumber() == activeBlock)
+        if (!data || !block.isVisible() || block.blockNumber() <= skipUntil)
+            continue;
+        if (md::isTableType(data->info.type)) {
+            const QTextBlock header = tableHeader(block);
+            if (header.blockNumber() != cursorTable)
+                paintTable(painter, tableGeometry(header));
+            skipUntil = tableEnd(block).blockNumber();
+            continue;
+        }
+        if (block.blockNumber() == activeBlock)
             continue;
         const md::BlockInfo &info = data->info;
 
@@ -331,8 +353,10 @@ void MarkdownEditor::updateMargins()
 
 md::BlockInfo MarkdownEditor::blockInfo(const QTextBlock &block) const
 {
-    const auto state = md::FenceState::decode(block.previous().isValid() ? block.previous().userState() : -1);
-    return md::parseLine(toView(block.text()), state).info;
+    const auto state = md::BlockState::decode(block.previous().isValid() ? block.previous().userState() : -1);
+    const QString nextText = block.next().isValid() ? block.next().text() : QString();
+    const auto nextLine = block.next().isValid() ? std::optional(toView(nextText)) : std::nullopt;
+    return md::parseLine(toView(block.text()), state, nextLine).info;
 }
 
 QRectF MarkdownEditor::characterRect(const QTextBlock &block, int position) const
@@ -490,4 +514,345 @@ bool MarkdownEditor::toggleTaskAt(const QPoint &pos)
     edit.setPosition(block.position() + info.checkboxStart + 2, QTextCursor::KeepAnchor);
     edit.insertText(info.checked ? QStringLiteral(" ") : QStringLiteral("x"));
     return true;
+}
+
+namespace {
+
+constexpr qreal tableCellPadding = 10;
+constexpr qreal tableCornerRadius = 6;
+
+QString emptyTableRow(int columns)
+{
+    QString row = QStringLiteral("|");
+    for (int c = 0; c < columns; ++c)
+        row += QStringLiteral("     |");
+    return row;
+}
+
+} // namespace
+
+void MarkdownEditor::insertTable(int rows, int columns)
+{
+    rows = std::max(rows, 1);
+    columns = std::max(columns, 1);
+
+    QString delimiter = QStringLiteral("|");
+    for (int c = 0; c < columns; ++c)
+        delimiter += QStringLiteral(" --- |");
+    QStringList lines{emptyTableRow(columns), delimiter};
+    for (int r = 1; r < rows; ++r)
+        lines << emptyTableRow(columns);
+
+    QTextCursor cursor = textCursor();
+    cursor.beginEditBlock();
+    cursor.clearSelection();
+    // Keep the table separated from surrounding text by blank lines.
+    if (!cursor.block().text().trimmed().isEmpty()) {
+        cursor.movePosition(QTextCursor::EndOfBlock);
+        cursor.insertBlock();
+        cursor.insertBlock();
+    } else if (cursor.block().previous().isValid() && !cursor.block().previous().text().trimmed().isEmpty()) {
+        cursor.insertBlock();
+    }
+    const int start = cursor.position();
+    cursor.insertText(lines.join(u'\n'));
+    const QTextBlock next = cursor.block().next();
+    if (next.isValid() && !next.text().trimmed().isEmpty())
+        cursor.insertBlock();
+    cursor.endEditBlock();
+
+    cursor.setPosition(start + 2); // first header cell
+    setTextCursor(cursor);
+    setFocus();
+}
+
+MarkdownEditor::TableGeometry MarkdownEditor::tableGeometry(const QTextBlock &header) const
+{
+    TableGeometry table;
+    const QTextBlock delimiter = header.next();
+    if (blockType(delimiter) != BlockType::TableDelimiter)
+        return table;
+    table.aligns = md::parseDelimiterRow(toView(delimiter.text())).value_or(std::vector<md::Align>{});
+    const int columns = int(table.aligns.size());
+    if (columns == 0)
+        return table;
+
+    table.rows.push_back(header);
+    for (QTextBlock b = delimiter.next(); b.isValid() && blockType(b) == BlockType::TableRow; b = b.next())
+        table.rows.push_back(b);
+
+    std::vector<qreal> widths(columns, 3 * tableCellPadding);
+    for (size_t r = 0; r < table.rows.size(); ++r) {
+        const QString text = table.rows[r].text();
+        const md::TableRow row = md::splitTableRow(toView(text));
+        for (int c = 0; c < columns && c < int(row.cells.size()); ++c) {
+            const md::TableCell &cell = row.cells[c];
+            qreal width = 0;
+            for (const TextRun &run : cellRuns(text.mid(cell.start, cell.end - cell.start), r == 0))
+                width += QFontMetricsF(run.font).horizontalAdvance(run.text);
+            widths[c] = std::max(widths[c], width + 2 * tableCellPadding);
+        }
+    }
+
+    // Shrink proportionally when the table is wider than the text column.
+    const qreal margin = document()->documentMargin();
+    const qreal available = viewport()->width() - 2 * margin;
+    const qreal total = std::accumulate(widths.begin(), widths.end(), qreal(0));
+    if (total > available && available > 0) {
+        for (qreal &width : widths)
+            width *= available / total;
+    }
+
+    table.edges.push_back(contentOffset().x() + margin);
+    for (const qreal width : widths)
+        table.edges.push_back(table.edges.back() + width);
+    return table;
+}
+
+std::vector<MarkdownEditor::TextRun> MarkdownEditor::cellRuns(const QString &text, bool header) const
+{
+    std::vector<TextRun> runs;
+    const md::InlineResult parsed = md::parseInline(toView(text));
+    const int n = int(parsed.styles.size());
+    int i = 0;
+    while (i < n) {
+        const std::uint16_t style = parsed.styles[i];
+        int j = i + 1;
+        while (j < n && parsed.styles[j] == style)
+            ++j;
+        if (!(style & md::Marker)) {
+            TextRun run{text.mid(i, j - i), font(), m_theme.text, QColor()};
+            if (header || (style & md::Bold))
+                run.font.setBold(true);
+            if (style & md::Italic)
+                run.font.setItalic(true);
+            if (style & md::Strike)
+                run.font.setStrikeOut(true);
+            if (style & md::Code) {
+                run.font.setFamilies(m_theme.monoFamilies);
+                run.color = m_theme.codeText;
+                run.background = m_theme.codeBackground;
+            }
+            if (style & md::Link) {
+                run.color = m_theme.accent;
+                run.font.setUnderline(true);
+            }
+            if (style & md::Highlight)
+                run.background = m_theme.highlightBackground;
+            runs.push_back(run);
+        }
+        i = j;
+    }
+    return runs;
+}
+
+void MarkdownEditor::paintTable(QPainter &painter, const TableGeometry &table) const
+{
+    if (table.rows.empty() || table.edges.size() < 2)
+        return;
+
+    const QPointF offset = contentOffset();
+    auto rectOf = [&](const QTextBlock &block) { return blockBoundingGeometry(block).translated(offset); };
+    const qreal left = table.edges.front();
+    const qreal right = table.edges.back();
+    const QRectF headerRect = rectOf(table.rows.front());
+    const qreal top = headerRect.top();
+    const qreal bottom = rectOf(table.rows.back()).bottom();
+    const QRectF outline(left, top, right - left, bottom - top);
+    const QPen gridPen(m_theme.rule, 1);
+
+    painter.save();
+    QPainterPath clip;
+    clip.addRoundedRect(outline, tableCornerRadius, tableCornerRadius);
+    painter.setClipPath(clip);
+    painter.fillRect(QRectF(left, top, right - left, headerRect.height()),
+                     EditorTheme::mix(palette().color(QPalette::Base), m_theme.text, 0.06));
+
+    painter.setPen(gridPen);
+    for (size_t r = 1; r < table.rows.size(); ++r) {
+        const qreal y = rectOf(table.rows[r]).top();
+        painter.drawLine(QPointF(left, y), QPointF(right, y));
+    }
+    for (size_t c = 1; c + 1 < table.edges.size(); ++c)
+        painter.drawLine(QPointF(table.edges[c], top), QPointF(table.edges[c], bottom));
+
+    const int columns = int(table.edges.size()) - 1;
+    for (size_t r = 0; r < table.rows.size(); ++r) {
+        const QTextBlock block = table.rows[r];
+        const QRectF rowRect = rectOf(block);
+        const QString text = block.text();
+        const md::TableRow row = md::splitTableRow(toView(text));
+        const qreal centerY = rowRect.center().y();
+
+        for (int c = 0; c < columns && c < int(row.cells.size()); ++c) {
+            const md::TableCell &cell = row.cells[c];
+            const std::vector<TextRun> runs = cellRuns(text.mid(cell.start, cell.end - cell.start), r == 0);
+            qreal width = 0;
+            for (const TextRun &run : runs)
+                width += QFontMetricsF(run.font).horizontalAdvance(run.text);
+
+            const qreal cellLeft = table.edges[c];
+            const qreal cellRight = table.edges[c + 1];
+            qreal x = cellLeft + tableCellPadding;
+            const md::Align align = c < int(table.aligns.size()) ? table.aligns[c] : md::Align::None;
+            if (align == md::Align::Center)
+                x = (cellLeft + cellRight - width) / 2;
+            else if (align == md::Align::Right)
+                x = cellRight - tableCellPadding - width;
+
+            painter.save();
+            painter.setClipRect(QRectF(cellLeft, rowRect.top(), cellRight - cellLeft, rowRect.height()),
+                                Qt::IntersectClip);
+            for (const TextRun &run : runs) {
+                const QFontMetricsF metrics(run.font);
+                const qreal runWidth = metrics.horizontalAdvance(run.text);
+                if (run.background.isValid())
+                    painter.fillRect(QRectF(x, centerY - metrics.height() / 2, runWidth, metrics.height()),
+                                     run.background);
+                painter.setFont(run.font);
+                painter.setPen(run.color);
+                painter.drawText(QPointF(x, centerY + (metrics.ascent() - metrics.descent()) / 2), run.text);
+                x += runWidth;
+            }
+            painter.restore();
+        }
+    }
+    painter.restore();
+
+    painter.setPen(gridPen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(outline.adjusted(0.5, 0.5, -0.5, -0.5), tableCornerRadius, tableCornerRadius);
+}
+
+// Clicking a rendered table puts the cursor into the clicked cell (which reveals the Markdown).
+bool MarkdownEditor::focusTableCellAt(const QPoint &pos)
+{
+    QTextBlock block = cursorForPosition(pos).block();
+    if (!isTableBlock(block))
+        return false;
+    const QTextBlock header = tableHeader(block);
+    if (isTableBlock(textCursor().block()) && tableHeader(textCursor().block()) == header)
+        return false; // already editing this table: plain click
+
+    const TableGeometry table = tableGeometry(header);
+    if (table.edges.size() < 2 || pos.x() < table.edges.front() || pos.x() > table.edges.back())
+        return false;
+    if (blockType(block) == BlockType::TableDelimiter)
+        block = header;
+
+    int column = 0;
+    while (column + 2 < int(table.edges.size()) && pos.x() >= table.edges[column + 1])
+        ++column;
+    placeInTableCell(block, column, false);
+    return true;
+}
+
+void MarkdownEditor::placeInTableCell(const QTextBlock &block, int cell, bool select)
+{
+    const md::TableRow row = md::splitTableRow(toView(block.text()));
+    QTextCursor cursor(document());
+    if (row.cells.empty()) {
+        cursor.setPosition(block.position() + block.length() - 1);
+    } else {
+        const md::TableCell &target = row.cells[std::clamp(cell, 0, int(row.cells.size()) - 1)];
+        cursor.setPosition(block.position() + (select ? target.start : target.end));
+        if (select)
+            cursor.setPosition(block.position() + target.end, QTextCursor::KeepAnchor);
+    }
+    setTextCursor(cursor);
+    ensureCursorVisible();
+}
+
+// Tab / Shift+Tab move between cells (selecting their content); Tab in the last cell adds a row.
+bool MarkdownEditor::moveToTableCell(bool backwards)
+{
+    const QTextCursor cursor = textCursor();
+    const QTextBlock block = cursor.block();
+    const BlockType type = blockType(block);
+    if (type != BlockType::TableHeader && type != BlockType::TableRow)
+        return false;
+
+    const md::TableRow row = md::splitTableRow(toView(block.text()));
+    if (row.cells.empty())
+        return false;
+    const int pos = cursor.positionInBlock();
+    int current = int(row.cells.size()) - 1;
+    for (int i = 0; i < int(row.cells.size()); ++i) {
+        if (pos <= row.cells[i].segmentEnd) {
+            current = i;
+            break;
+        }
+    }
+
+    if (!backwards) {
+        if (current + 1 < int(row.cells.size())) {
+            placeInTableCell(block, current + 1, true);
+            return true;
+        }
+        QTextBlock next = block.next();
+        if (blockType(next) == BlockType::TableDelimiter)
+            next = next.next();
+        if (next.isValid() && blockType(next) == BlockType::TableRow)
+            placeInTableCell(next, 0, true);
+        else
+            insertTableRowAfter(block);
+        return true;
+    }
+
+    if (current > 0) {
+        placeInTableCell(block, current - 1, true);
+        return true;
+    }
+    QTextBlock previous = block.previous();
+    if (blockType(previous) == BlockType::TableDelimiter)
+        previous = previous.previous();
+    if (isTableBlock(previous))
+        placeInTableCell(previous, std::numeric_limits<int>::max(), true);
+    return true;
+}
+
+// Enter adds a row below; Enter on an empty row leaves the table.
+bool MarkdownEditor::tableEnter()
+{
+    QTextCursor cursor = textCursor();
+    const QTextBlock block = cursor.block();
+    const BlockType type = blockType(block);
+    if (cursor.hasSelection() || (type != BlockType::TableHeader && type != BlockType::TableRow))
+        return false;
+
+    if (type == BlockType::TableRow) {
+        const md::TableRow row = md::splitTableRow(toView(block.text()));
+        const bool empty = std::all_of(row.cells.begin(), row.cells.end(),
+                                       [](const md::TableCell &cell) { return cell.start == cell.end; });
+        if (empty) {
+            // Leave a blank line after the table: in GFM a following line without pipes would
+            // otherwise still count as a table row.
+            cursor.beginEditBlock();
+            cursor.movePosition(QTextCursor::StartOfBlock);
+            cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            cursor.removeSelectedText();
+            cursor.insertBlock();
+            cursor.endEditBlock();
+            setTextCursor(cursor);
+            return true;
+        }
+    }
+    insertTableRowAfter(block);
+    return true;
+}
+
+void MarkdownEditor::insertTableRowAfter(const QTextBlock &block)
+{
+    const QTextBlock header = tableHeader(block);
+    const int columns = std::max<int>(1, int(md::splitTableRow(toView(header.text())).cells.size()));
+    // A new row never goes between the header and the delimiter row.
+    const QTextBlock after = blockType(block) == BlockType::TableHeader ? block.next() : block;
+
+    QTextCursor cursor(after);
+    cursor.movePosition(QTextCursor::EndOfBlock);
+    cursor.beginEditBlock();
+    cursor.insertBlock();
+    cursor.insertText(emptyTableRow(columns));
+    cursor.endEditBlock();
+    placeInTableCell(after.next(), 0, false);
 }

@@ -1,5 +1,7 @@
 #include "markdown/BlockParser.h"
 
+#include "markdown/TableParser.h"
+
 namespace md {
 
 namespace {
@@ -34,21 +36,30 @@ int skipWs(std::u16string_view s, int from)
 
 } // namespace
 
-int FenceState::encode() const
+// Fences encode as (length << 2) | tilde bit, i.e. even values >= 12; table states use 1 and 3.
+int BlockState::encode() const
 {
-    if (!inside())
-        return -1;
-    return (fenceLength << 1) | (fenceChar == u'~' ? 1 : 0);
+    if (inFence())
+        return (fenceLength << 2) | (fenceChar == u'~' ? 2 : 0);
+    if (table == Table::AfterHeader)
+        return 1;
+    if (table == Table::Body)
+        return 3;
+    return -1;
 }
 
-FenceState FenceState::decode(int state)
+BlockState BlockState::decode(int state)
 {
     if (state < 0)
         return {};
-    return {(state & 1) ? u'~' : u'`', state >> 1};
+    if (state == 1)
+        return {0, 0, Table::AfterHeader};
+    if (state == 3)
+        return {0, 0, Table::Body};
+    return {(state & 2) ? u'~' : u'`', state >> 2, Table::None};
 }
 
-LineResult parseLine(std::u16string_view line, FenceState state)
+LineResult parseLine(std::u16string_view line, BlockState state, std::optional<std::u16string_view> nextLine)
 {
     LineResult r;
     r.next = state;
@@ -59,7 +70,21 @@ LineResult parseLine(std::u16string_view line, FenceState state)
     b.markerStart = ind;
     b.contentStart = ind;
 
-    if (state.inside()) {
+    if (state.table == BlockState::Table::AfterHeader && parseDelimiterRow(line)) {
+        b.type = BlockType::TableDelimiter;
+        b.markerLength = n - ind;
+        b.contentStart = n;
+        r.next.table = BlockState::Table::Body;
+        return r;
+    }
+    if (state.table == BlockState::Table::Body && !isBlank(line) && line.find(u'|') != std::u16string_view::npos) {
+        b.type = BlockType::TableRow;
+        b.contentStart = 0;
+        return r;
+    }
+    r.next.table = BlockState::Table::None;
+
+    if (state.inFence()) {
         if (ind <= 3) {
             const int len = runLength(line, ind, state.fenceChar);
             if (len >= state.fenceLength && isBlank(line.substr(ind + len))) {
@@ -79,6 +104,16 @@ LineResult parseLine(std::u16string_view line, FenceState state)
     if (ind == n) {
         b.type = BlockType::Blank;
         return r;
+    }
+
+    if (ind <= 3 && nextLine && line.find(u'|') != std::u16string_view::npos) {
+        const auto aligns = parseDelimiterRow(*nextLine);
+        if (aligns && splitTableRow(line).cells.size() == aligns->size()) {
+            b.type = BlockType::TableHeader;
+            b.contentStart = 0;
+            r.next.table = BlockState::Table::AfterHeader;
+            return r;
+        }
     }
 
     const char16_t c = line[ind];

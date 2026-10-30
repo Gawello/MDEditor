@@ -24,6 +24,11 @@ Links: [Qt](https://www.qt.io), https://github.com and a [[wiki link]] (Ctrl+cli
 > A quote
 > spanning two lines
 
+| Feature | Status | Notes |
+| :-- | :-: | --: |
+| **Live preview** | done | `inline code` |
+| Tables | *new* | right aligned |
+
 ---
 
 ```cpp
