@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MDEditor
+Comment=Markdown editor with live preview
+Exec=MDEditor %f
+Icon=text-markdown
+Terminal=false
+Categories=Office;TextEditor;Utility;
+MimeType=text/markdown;text/x-markdown;text/plain;
