@@ -36,6 +36,20 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - JavaScript plugins: commands, code formatters, events (open / before save / save) and themes, with a
   "Create plugin…" button ([docs/plugins.md](docs/plugins.md), [examples](examples/plugins))
 
+## Installing
+
+Download the latest release from the [Releases page](https://github.com/Gawello/MDEditor/releases):
+
+- **Windows:** `MDEditor-<version>-win64.exe` (installer: Start menu and desktop shortcuts, "Open with" for
+  `.md` files, uninstaller) or the portable `.zip`. The installer isn't code-signed, so SmartScreen may ask
+  for confirmation ("More info" → "Run anyway").
+- **Debian/Ubuntu:** `sudo apt install ./mdeditor_<version>_amd64.deb` (installs into `/opt/mdeditor` with
+  its own Qt, adds the `mdeditor` command and a menu entry).
+- **Other Linux:** `chmod +x MDEditor-<version>-x86_64.AppImage` and run it.
+
+Every CI run also uploads these packages as build artifacts. Releases are published automatically when a
+tag `v<version>` matching the version in `CMakeLists.txt` is pushed.
+
 ## Building
 
 Requirements: CMake ≥ 3.21, a C++20 compiler, Ninja, and Qt ≥ 6.5 (Widgets and Qml).
@@ -86,8 +100,7 @@ The `core` preset builds only the Markdown parser and its tests, with no Qt need
 
 ## Roadmap
 
-Remote (http) images, syntax highlighting in code blocks, search & replace,
-HTML/PDF export, AppImage and installer packages, translations.
+Remote (http) images, syntax highlighting in code blocks, HTML/PDF export, translations.
 
 ## License
 

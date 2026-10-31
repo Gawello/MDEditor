@@ -1,0 +1,24 @@
+#!/bin/sh
+# Expose the self-contained install in /opt/mdeditor: launcher, menu entry and icons.
+set -e
+
+if [ "$1" = "configure" ]; then
+    ln -sf /opt/mdeditor/bin/MDEditor /usr/bin/mdeditor
+    ln -sf /opt/mdeditor/share/applications/mdeditor.desktop /usr/share/applications/mdeditor.desktop
+    for size in 16 32 48 64 128 256 512; do
+        dir="/usr/share/icons/hicolor/${size}x${size}/apps"
+        mkdir -p "$dir"
+        ln -sf "/opt/mdeditor/share/icons/hicolor/${size}x${size}/apps/mdeditor.png" "$dir/mdeditor.png"
+    done
+    mkdir -p /usr/share/icons/hicolor/scalable/apps
+    ln -sf /opt/mdeditor/share/icons/hicolor/scalable/apps/mdeditor.svg /usr/share/icons/hicolor/scalable/apps/mdeditor.svg
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+    fi
+fi
+
+exit 0

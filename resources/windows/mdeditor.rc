@@ -1,0 +1,2 @@
+// Windows resources: the executable's icon (Explorer, taskbar, shortcuts, installer).
+IDI_ICON1 ICON "../icons/mdeditor.ico"

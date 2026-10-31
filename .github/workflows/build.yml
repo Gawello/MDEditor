@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write # needed to publish releases on tags
+
 jobs:
   build:
     strategy:
@@ -19,6 +22,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        shell: bash
+        run: echo "VERSION=$(sed -nE 's/^project\(MDEditor VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)" >> "$GITHUB_ENV"
+
+      - name: Check tag matches the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match project version ${VERSION} in CMakeLists.txt"
+            exit 1
+          fi
+
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -31,11 +47,13 @@ jobs:
 
       - name: Install build tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev file
 
-      - name: Install Ninja (Windows)
+      - name: Install build tools (Windows)
         if: runner.os == 'Windows'
-        run: choco install ninja --no-progress -y
+        run: |
+          choco install ninja --no-progress -y
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis --no-progress -y }
 
       - name: Configure
         run: cmake --preset release
@@ -46,11 +64,44 @@ jobs:
       - name: Test
         run: ctest --preset release
 
-      - name: Install
-        # Qt's deploy script needs an absolute install prefix.
-        run: cmake --install build/release --prefix "${{ github.workspace }}/dist"
+      - name: Package (Windows installer + zip)
+        if: runner.os == 'Windows'
+        run: cpack --config build/release/CPackConfig.cmake -G "NSIS;ZIP" -B packages
+
+      - name: Package (Linux .deb)
+        if: runner.os == 'Linux'
+        run: cpack --config build/release/CPackConfig.cmake -G DEB -B packages
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          # Qt's deploy script (run by cmake --install) bundles Qt; the prefix must be absolute.
+          cmake --install build/release --prefix "$PWD/AppDir/usr"
+          install -m 755 packaging/linux/AppRun AppDir/AppRun
+          cp packaging/linux/mdeditor.desktop AppDir/
+          cp resources/icons/mdeditor-256.png AppDir/mdeditor.png
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage AppDir "packages/MDEditor-${VERSION}-x86_64.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist
+          path: |
+            packages/*.exe
+            packages/*.zip
+            packages/*.deb
+            packages/*.AppImage
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MDEditor ${{ env.VERSION }}
+          generate_release_notes: true
+          files: |
+            packages/*.exe
+            packages/*.zip
+            packages/*.deb
+            packages/*.AppImage

@@ -1,9 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=MDEditor
+GenericName=Markdown Editor
 Comment=Markdown editor with live preview
-Exec=MDEditor %f
-Icon=text-markdown
+Exec=mdeditor %F
+Icon=mdeditor
 Terminal=false
 Categories=Office;TextEditor;Utility;
 MimeType=text/markdown;text/x-markdown;text/plain;
+Keywords=markdown;notes;editor;md;
+StartupWMClass=MDEditor

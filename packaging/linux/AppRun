@@ -1,0 +1,4 @@
+#!/bin/sh
+# AppImage entry point: run the bundled executable (it finds its Qt via RPATH and qt.conf).
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/MDEditor" "$@"

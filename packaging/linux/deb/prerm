@@ -1,0 +1,17 @@
+#!/bin/sh
+# Remove the links created by postinst.
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    rm -f /usr/bin/mdeditor /usr/share/applications/mdeditor.desktop
+    for size in 16 32 48 64 128 256 512; do
+        rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/mdeditor.png"
+    done
+    rm -f /usr/share/icons/hicolor/scalable/apps/mdeditor.svg
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+fi
+
+exit 0

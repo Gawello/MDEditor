@@ -39,6 +39,13 @@ cmake --build --preset core; ctest --preset core          # parser only, no Qt n
   CI fail with "Given qt.conf path is not an absolute path".
 - CI: `.github/workflows/build.yml` builds, tests and packages on `windows-latest` (MSVC) and `ubuntu-24.04`.
   Keep the code warning-free on GCC/MinGW and MSVC (`/W4`).
+- Packaging (`cmake/Packaging.cmake`, CPack): NSIS `.exe` + `.zip` on Windows, `.deb` on Linux (self-contained
+  in `/opt/mdeditor`; `packaging/linux/deb/postinst|prerm` link `/usr/bin/mdeditor`, the menu entry and
+  icons). The AppImage is assembled in CI from `cmake --install` + `packaging/linux/AppRun` with appimagetool.
+  Pushing a tag `v<version>` (must equal `project(... VERSION)`) publishes a GitHub Release with all packages.
+  Local check: `cpack --config build/qt-debug/CPackConfig.cmake -G ZIP -B <dir>`.
+- Icon: `resources/icons/mdeditor.svg` is the source; the PNGs and `mdeditor.ico` (multi-size, PNG entries)
+  are rendered from it with a QSvgRenderer-based helper. Re-render them all if the SVG changes.
 
 ### Testing the GUI
 
@@ -46,10 +53,12 @@ cmake --build --preset core; ctest --preset core          # parser only, no Qt n
   `tests/TestHarness.h` (`TEST_CASE`, `CHECK`), not Qt Test, so they build without Qt.
 - App-level tests (`tests/test_plugins.cpp`, `app_tests`) use the same harness with a QApplication and their
   own QSettings organization (`MDEditorTests`), so they never touch the user's settings.
-- Visual checks: launch the app and take window screenshots, **without sending keystrokes**. Never use SendKeys
-  (or any synthetic input) on the user's desktop: when Windows doesn't give the app focus, the keys go to
-  whatever window the user has active (this once opened the browser's history with Ctrl+H and typed into it).
-  Drive UI behavior from offscreen tests or a scratch driver instead.
+- Visual checks: render widgets off screen (`Qt::WA_DontShowOnScreen` + `grab()`) in a scratch driver. Do **not**
+  take desktop screenshots or send any synthetic input (SendKeys, focus changes) on the user's machine: keys go
+  to whatever window the user has active (this once opened the browser's history with Ctrl+H and typed into
+  it), and screen captures can include the user's other windows.
+- To check that a packaged build starts, launch it minimized and list its visible windows passively
+  (EnumWindows by process id), then stop the process.
 - For editor behavior that doesn't need real focus, a scratch driver linking the editor sources and run with
   `QT_QPA_PLATFORM=offscreen` works well: send `QKeyEvent`/`QMouseEvent` with `QApplication::sendEvent`, print
   `markdown()`, and save `widget->grab()` images. Offscreen has no fonts, so glyphs render as boxes.
@@ -136,6 +145,9 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
   `FindCaseSensitively` flag instead (case-insensitive without it); `FindBar::findFrom` sets the flag.
 - To render a widget with real fonts but nothing on screen, set `Qt::WA_DontShowOnScreen`, `show()` it and
   `grab()` (no offscreen platform needed).
+- MinGW: CLion's GCC 15 differs from the MinGW 13 that built Qt. windeployqt copies Qt's (older) libstdc++ into
+  installs, which makes the app hang at startup in the Windows loader. The CMake install step re-installs the
+  building compiler's runtime DLLs after the deploy script (`mingw_runtime_dlls`). Not an issue with MSVC (CI).
 - On Windows, Qt `#define`s `main` (to `qMain`): never name a member or variable `main`.
 - `qt_standard_project_setup()` puts all executables in one output directory; only one target may generate
   `qt.conf` there (`mdeditor_make_runnable(target NO_QT_CONF)`).

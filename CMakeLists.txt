@@ -53,6 +53,25 @@ if(MDEDITOR_BUILD_APP)
     qt_add_executable(MDEditor WIN32 src/main.cpp)
     target_link_libraries(MDEditor PRIVATE mdeditor_app)
     target_compile_definitions(MDEditor PRIVATE MDEDITOR_VERSION="${PROJECT_VERSION}")
+    if(WIN32)
+        target_sources(MDEditor PRIVATE resources/windows/mdeditor.rc) # executable icon
+    endif()
+    # Window icon in all sizes.
+    qt_add_resources(MDEditor "icons" PREFIX "/" BASE resources FILES
+        resources/icons/mdeditor-16.png resources/icons/mdeditor-32.png resources/icons/mdeditor-48.png
+        resources/icons/mdeditor-64.png resources/icons/mdeditor-128.png resources/icons/mdeditor-256.png)
+
+    # The MinGW runtime of the compiler that built the app. It must win over the one windeployqt copies
+    # from Qt's own MinGW, which may be an older, incompatible version (the app then hangs at startup).
+    set(mingw_runtime_dlls "")
+    if(MINGW)
+        get_filename_component(compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        foreach(dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+            if(EXISTS "${compiler_dir}/${dll}")
+                list(APPEND mingw_runtime_dlls "${compiler_dir}/${dll}")
+            endif()
+        endforeach()
+    endif()
 
     # Make a build-directory executable runnable as is (from an IDE or by double click) on Windows:
     # copy the Qt and compiler runtime DLLs next to it and point Qt at its plugins via qt.conf.
@@ -62,18 +81,9 @@ if(MDEDITOR_BUILD_APP)
         if(NOT WIN32)
             return()
         endif()
-        set(runtime_dlls "")
-        if(MINGW)
-            get_filename_component(compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-            foreach(dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-                if(EXISTS "${compiler_dir}/${dll}")
-                    list(APPEND runtime_dlls "${compiler_dir}/${dll}")
-                endif()
-            endforeach()
-        endif()
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:${target}> ${runtime_dlls} $<TARGET_FILE_DIR:${target}>
+                $<TARGET_RUNTIME_DLLS:${target}> ${mingw_runtime_dlls} $<TARGET_FILE_DIR:${target}>
             COMMAND_EXPAND_LISTS
         )
         if(NOT arg_NO_QT_CONF)
@@ -90,6 +100,16 @@ if(MDEDITOR_BUILD_APP)
     )
     if(UNIX AND NOT APPLE)
         install(FILES packaging/linux/mdeditor.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+        foreach(size 16 32 48 64 128 256 512)
+            install(FILES resources/icons/mdeditor-${size}.png
+                DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps RENAME mdeditor.png)
+        endforeach()
+        install(FILES resources/icons/mdeditor.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+    endif()
+    if(MSVC)
+        # The Visual C++ runtime DLLs, so the app runs without installing the VC++ redistributable.
+        set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+        include(InstallRequiredSystemLibraries)
     endif()
 
     # `cmake --install` copies the Qt runtime next to the executable (windeployqt on Windows).
@@ -99,6 +119,11 @@ if(MDEDITOR_BUILD_APP)
         NO_UNSUPPORTED_PLATFORM_ERROR
     )
     install(SCRIPT ${deploy_script})
+    if(mingw_runtime_dlls)
+        install(FILES ${mingw_runtime_dlls} DESTINATION ${CMAKE_INSTALL_BINDIR}) # after deploy: overrides
+    endif()
+
+    include(cmake/Packaging.cmake) # installers: NSIS (.exe), DEB; AppImage is built in CI
 endif()
 
 if(BUILD_TESTING)
