@@ -1,18 +1,25 @@
 #include "editor/MarkdownEditor.h"
 
+#include "app/AppSettings.h"
 #include "editor/LivePreviewHighlighter.h"
+#include "format/CodeFormatters.h"
+#include "format/FormatterRegistry.h"
 #include "markdown/InlineParser.h"
 
+#include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFileInfo>
+#include <QImageReader>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextLayout>
+#include <QTimer>
 #include <QUrl>
 
 #include <algorithm>
@@ -41,14 +48,18 @@ bool isCode(BlockType type)
     return type == BlockType::FenceOpen || type == BlockType::FenceClose || type == BlockType::CodeLine;
 }
 
+bool isImageFile(const QString &path)
+{
+    static const QList<QByteArray> formats = QImageReader::supportedImageFormats();
+    return formats.contains(QFileInfo(path).suffix().toLower().toLatin1());
+}
+
 } // namespace
 
 MarkdownEditor::MarkdownEditor(QWidget *parent)
     : QPlainTextEdit(parent)
 {
-    QFont base = font();
-    base.setPointSizeF(12);
-    setFont(base);
+    applyFontSettings();
 
     setFrameShape(QFrame::NoFrame);
     // Fill the side margins (outside of the viewport) with the text background.
@@ -60,11 +71,36 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
 
     m_theme = EditorTheme::fromPalette(palette(), font());
     m_highlighter = new LivePreviewHighlighter(document(), &m_theme);
+    m_highlighter->setImageSizeProvider(
+        [this](const QString &target, int requestedWidth) { return imageDisplaySize(target, requestedWidth); });
+
+    // Image sizes depend on the text column width: re-layout once resizing settles.
+    m_imageRelayout = new QTimer(this);
+    m_imageRelayout->setSingleShot(true);
+    m_imageRelayout->setInterval(120);
+    connect(m_imageRelayout, &QTimer::timeout, m_highlighter, &QSyntaxHighlighter::rehighlight);
 
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
 
     applyTheme();
     document()->setModified(false); // setDocumentMargin() counts as a modification
+
+    connect(&AppSettings::instance(), &AppSettings::changed, this, [this](const QString &key) {
+        if (key == QLatin1String(AppSettings::fontFamilyKey) || key == QLatin1String(AppSettings::fontSizeKey))
+            applyFontSettings();
+        else if (key == QLatin1String(AppSettings::readableWidthKey) || key == QLatin1String(AppSettings::indentSizeKey))
+            applyTheme();
+    });
+}
+
+void MarkdownEditor::applyFontSettings()
+{
+    QFont base = QApplication::font();
+    const QString family = AppSettings::instance().fontFamily();
+    if (!family.isEmpty())
+        base.setFamily(family);
+    base.setPointSizeF(AppSettings::instance().fontSize());
+    setFont(base); // FontChange re-applies the theme
 }
 
 QString MarkdownEditor::markdown() const
@@ -80,6 +116,18 @@ void MarkdownEditor::setMarkdown(const QString &text)
 {
     setPlainText(text);
     refreshActiveBlock();
+}
+
+void MarkdownEditor::replaceAll(const QString &text)
+{
+    if (text == markdown())
+        return;
+    const int position = textCursor().position();
+    QTextCursor cursor(document());
+    cursor.select(QTextCursor::Document);
+    cursor.insertText(text);
+    cursor.setPosition(std::min(position, document()->characterCount() - 1));
+    setTextCursor(cursor);
 }
 
 void MarkdownEditor::refreshActiveBlock()
@@ -275,6 +323,10 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
             }
             break;
         }
+        case BlockType::Paragraph:
+            if (data->imageShown)
+                paintImage(painter, block, data->image, data->imageWidth);
+            break;
         case BlockType::HorizontalRule: {
             const qreal y = r.center().y();
             painter.setPen(QPen(m_theme.rule, 1));
@@ -291,6 +343,25 @@ void MarkdownEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
     updateMargins();
+    if (m_hasImages && m_imageRelayout && viewport()->width() != m_layoutWidth) {
+        m_layoutWidth = viewport()->width();
+        m_imageRelayout->start();
+    }
+}
+
+void MarkdownEditor::setDocumentPath(const QString &filePath)
+{
+    m_documentPath = filePath;
+    setBaseDirectory(QFileInfo(filePath).absolutePath());
+}
+
+void MarkdownEditor::setBaseDirectory(const QString &directory)
+{
+    if (directory == m_baseDirectory)
+        return;
+    m_baseDirectory = directory;
+    if (!document()->isEmpty()) // relative image paths now resolve differently
+        m_highlighter->rehighlight();
 }
 
 void MarkdownEditor::changeEvent(QEvent *event)
@@ -318,15 +389,176 @@ void MarkdownEditor::dragMoveEvent(QDragMoveEvent *event)
     QPlainTextEdit::dragMoveEvent(event);
 }
 
+// Dropped images are linked into the text; other files are opened.
 void MarkdownEditor::dropEvent(QDropEvent *event)
 {
     const QStringList files = localFiles(event->mimeData());
     if (!files.isEmpty()) {
         event->acceptProposedAction();
-        emit filesDropped(files);
+        QStringList images;
+        QStringList documents;
+        for (const QString &file : files)
+            (isImageFile(file) ? images : documents) << file;
+        if (!images.isEmpty())
+            insertImageLinks(images, cursorForPosition(event->position().toPoint()));
+        if (!documents.isEmpty())
+            emit filesDropped(documents);
         return;
     }
     QPlainTextEdit::dropEvent(event);
+}
+
+bool MarkdownEditor::canInsertFromMimeData(const QMimeData *source) const
+{
+    return source->hasImage() || QPlainTextEdit::canInsertFromMimeData(source);
+}
+
+// Pasting copied image files links them; pasting image data (a screenshot, "Copy image")
+// stores it next to the note. Text wins when the clipboard has both (e.g. copied from Word).
+void MarkdownEditor::insertFromMimeData(const QMimeData *source)
+{
+    const QStringList files = localFiles(source);
+    if (!files.isEmpty() && std::all_of(files.begin(), files.end(), isImageFile)) {
+        insertImageLinks(files, textCursor());
+        return;
+    }
+    if (source->hasImage() && !source->hasText()) {
+        pasteImage(qvariant_cast<QImage>(source->imageData()));
+        return;
+    }
+    QPlainTextEdit::insertFromMimeData(source);
+}
+
+void MarkdownEditor::pasteImage(const QImage &image)
+{
+    if (image.isNull())
+        return;
+    const QString attachmentsFolder = AppSettings::instance().attachmentsFolder();
+    if (m_documentPath.isEmpty()) {
+        QMessageBox::information(this, tr("Paste Image"),
+                                 tr("Save the note first: pasted images are stored in an \"%1\" folder next to it.")
+                                     .arg(attachmentsFolder));
+        return;
+    }
+
+    QDir directory(QFileInfo(m_documentPath).absolutePath());
+    if (!directory.mkpath(attachmentsFolder) || !directory.cd(attachmentsFolder)) {
+        QMessageBox::warning(this, tr("Paste Image"),
+                             tr("Cannot create the folder %1.")
+                                 .arg(QDir::toNativeSeparators(directory.filePath(attachmentsFolder))));
+        return;
+    }
+
+    const QString stem = QStringLiteral("pasted-image-%1")
+                             .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+    QString name = stem + QStringLiteral(".png");
+    for (int n = 1; directory.exists(name); ++n)
+        name = QStringLiteral("%1-%2.png").arg(stem).arg(n);
+
+    const QString path = directory.filePath(name);
+    if (!image.save(path, "PNG")) {
+        QMessageBox::warning(this, tr("Paste Image"),
+                             tr("Cannot save the image to %1.").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    insertImageLinks({path}, textCursor());
+}
+
+// Inserts one image link per line after the cursor's line.
+void MarkdownEditor::insertImageLinks(const QStringList &files, QTextCursor cursor)
+{
+    cursor.clearSelection();
+    cursor.beginEditBlock();
+    cursor.movePosition(QTextCursor::EndOfBlock);
+    for (const QString &file : files) {
+        QString path = m_baseDirectory.isEmpty() ? file : QDir(m_baseDirectory).relativeFilePath(file);
+        path.replace(u' ', QStringLiteral("%20"));
+        if (!cursor.block().text().trimmed().isEmpty())
+            cursor.insertBlock();
+        cursor.insertText(QStringLiteral("![](%1)").arg(path));
+    }
+    cursor.insertBlock(); // move on, so the image renders right away
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+    setFocus();
+}
+
+QString MarkdownEditor::resolvePath(const QString &target) const
+{
+    const QString path = QUrl::fromPercentEncoding(target.section(u'#', 0, 0).toUtf8());
+    if (path.isEmpty())
+        return {};
+    const QDir base(m_baseDirectory.isEmpty() ? QDir::currentPath() : m_baseDirectory);
+    return QFileInfo(base.filePath(path)).absoluteFilePath();
+}
+
+// Loads (and caches) a local image; reloads it when the file changes. Remote images aren't fetched.
+MarkdownEditor::CachedImage *MarkdownEditor::cachedImage(const QString &target) const
+{
+    if (QUrl(target).scheme().size() > 1)
+        return nullptr;
+    const QString path = resolvePath(target);
+    const QFileInfo info(path);
+    if (path.isEmpty() || !info.isFile()) {
+        m_images.remove(path);
+        return nullptr;
+    }
+
+    auto it = m_images.find(path);
+    if (it == m_images.end() || it->modified != info.lastModified()) {
+        QImageReader reader(path);
+        reader.setAutoTransform(true); // honor EXIF rotation
+        QImage image = reader.read();
+        if (image.isNull()) {
+            m_images.remove(path);
+            return nullptr;
+        }
+        if (image.width() > 2400) // nobody needs full-resolution photos in a text column
+            image = image.scaledToWidth(2400, Qt::SmoothTransformation);
+        it = m_images.insert(path, {image, info.lastModified(), {}});
+    }
+    m_hasImages = true;
+    return &it.value();
+}
+
+QSizeF MarkdownEditor::imageDisplaySize(const QString &target, int requestedWidth) const
+{
+    const CachedImage *cached = cachedImage(target);
+    if (!cached)
+        return {};
+    const QSizeF natural = cached->image.size();
+    const qreal available = viewport()->width() - 2 * document()->documentMargin();
+    const qreal width = std::min<qreal>(requestedWidth > 0 ? requestedWidth : natural.width(), available);
+    if (width <= 0 || natural.width() <= 0)
+        return {};
+    return {width, width * natural.height() / natural.width()};
+}
+
+void MarkdownEditor::paintImage(QPainter &painter, const QTextBlock &block, const QString &target,
+                                int requestedWidth) const
+{
+    CachedImage *cached = cachedImage(target);
+    const QSizeF size = imageDisplaySize(target, requestedWidth);
+    if (!cached || size.isEmpty())
+        return;
+
+    const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
+    const QRectF area(contentOffset().x() + document()->documentMargin(), r.top() + imageVerticalPadding,
+                      size.width(), size.height());
+    const qreal dpr = viewport()->devicePixelRatioF();
+    const QSize pixels = (size * dpr).toSize();
+    if (cached->scaled.size() != pixels) {
+        cached->scaled = QPixmap::fromImage(
+            cached->image.scaled(pixels, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+        cached->scaled.setDevicePixelRatio(dpr);
+    }
+
+    painter.save();
+    QPainterPath clip;
+    clip.addRoundedRect(area, 4, 4);
+    painter.setClipPath(clip);
+    painter.drawPixmap(area.topLeft(), cached->scaled);
+    painter.restore();
 }
 
 void MarkdownEditor::applyTheme()
@@ -336,7 +568,7 @@ void MarkdownEditor::applyTheme()
     const QScopedValueRollback guard(m_applyingTheme, true);
 
     m_theme = EditorTheme::fromPalette(palette(), font());
-    setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * 4);
+    setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * AppSettings::instance().indentSize());
     m_highlighter->rehighlight();
     updateMargins();
     viewport()->update();
@@ -345,8 +577,8 @@ void MarkdownEditor::applyTheme()
 // Keeps lines at a comfortable reading width by centering the text column.
 void MarkdownEditor::updateMargins()
 {
-    const int readableWidth = fontMetrics().averageCharWidth() * 100;
-    const int side = std::max(0, (width() - readableWidth) / 2);
+    const int characters = AppSettings::instance().readableWidth();
+    const int side = characters > 0 ? std::max(0, (width() - fontMetrics().averageCharWidth() * characters) / 2) : 0;
     if (viewportMargins().left() != side)
         setViewportMargins(side, 0, side, 0);
 }
@@ -430,7 +662,7 @@ bool MarkdownEditor::indentListItem(bool outdent)
 
     QTextCursor edit(block);
     if (!outdent) {
-        edit.insertText(QStringLiteral("    "));
+        edit.insertText(QString(AppSettings::instance().indentSize(), u' '));
         return true;
     }
 
@@ -478,12 +710,11 @@ void MarkdownEditor::openLink(const QString &target)
         return;
     }
 
-    const QString path = QUrl::fromPercentEncoding(target.section(u'#', 0, 0).toUtf8());
+    const QString path = resolvePath(target);
     if (path.isEmpty())
         return;
 
-    const QDir base(m_baseDirectory.isEmpty() ? QDir::currentPath() : m_baseDirectory);
-    QFileInfo file(base.filePath(path));
+    QFileInfo file(path);
     if (!file.exists() && file.suffix().isEmpty())
         file.setFile(file.filePath() + QStringLiteral(".md"));
 
@@ -855,4 +1086,175 @@ void MarkdownEditor::insertTableRowAfter(const QTextBlock &block)
     cursor.insertText(emptyTableRow(columns));
     cursor.endEditBlock();
     placeInTableCell(after.next(), 0, false);
+}
+
+std::optional<MarkdownEditor::CodeBlock> MarkdownEditor::codeBlockAt(const QTextBlock &block) const
+{
+    if (!isCode(blockType(block)))
+        return std::nullopt;
+    QTextBlock open = block;
+    if (blockType(open) == BlockType::FenceClose)
+        open = open.previous();
+    while (open.isValid() && blockType(open) != BlockType::FenceOpen)
+        open = open.previous();
+    if (!open.isValid())
+        return std::nullopt;
+
+    QTextBlock last = open;
+    while (last.next().isValid() && blockType(last.next()) == BlockType::CodeLine)
+        last = last.next();
+    if (last == open)
+        return std::nullopt; // empty block
+
+    QString info = open.text().trimmed();
+    while (info.startsWith(u'`') || info.startsWith(u'~'))
+        info.remove(0, 1);
+    CodeBlock code;
+    code.start = open.next().position();
+    code.end = last.position() + last.length() - 1;
+    code.language = info.trimmed().section(u' ', 0, 0).toLower();
+    return code;
+}
+
+QString MarkdownEditor::documentLanguage() const
+{
+    const QString suffix = QFileInfo(m_documentPath).suffix().toLower();
+    if (suffix.isEmpty() || suffix == u"md" || suffix == u"markdown" || suffix == u"txt")
+        return {};
+    return FormatterRegistry::instance().languageForSuffix(suffix);
+}
+
+bool MarkdownEditor::formatRange(int start, int end, const QString &language, QString *message)
+{
+    QTextCursor cursor(document());
+    cursor.setPosition(start);
+    cursor.setPosition(end, QTextCursor::KeepAnchor);
+    QString text = cursor.selectedText();
+    text.replace(QChar::ParagraphSeparator, u'\n');
+
+    const FormatterRegistry::Outcome outcome = FormatterRegistry::instance().format(language, text);
+    if (!outcome.ok) {
+        *message = tr("Cannot format %1: %2").arg(language, outcome.error);
+        return false;
+    }
+    if (outcome.text != text)
+        cursor.insertText(outcome.text);
+    *message = tr("Formatted %1 (%2)").arg(language, outcome.formatter);
+    return true;
+}
+
+bool MarkdownEditor::formatTable(const QTextBlock &header, QString *message)
+{
+    const QTextBlock last = tableEnd(header);
+    std::vector<std::u16string> lines;
+    for (QTextBlock b = header; b.isValid(); b = b.next()) {
+        lines.push_back(b.text().toStdU16String());
+        if (b == last)
+            break;
+    }
+    QStringList formatted;
+    for (const std::u16string &line : fmt::formatTable(lines))
+        formatted << QString::fromStdU16String(line);
+
+    QTextCursor cursor(document());
+    cursor.setPosition(header.position());
+    cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    const QString replacement = formatted.join(u'\n');
+    if (cursor.selectedText().replace(QChar::ParagraphSeparator, u'\n') != replacement)
+        cursor.insertText(replacement);
+    *message = tr("Table aligned");
+    return true;
+}
+
+void MarkdownEditor::formatAtCursor()
+{
+    const QTextCursor cursor = textCursor();
+    QString message;
+
+    if (cursor.hasSelection()) {
+        QString language;
+        if (const auto code = codeBlockAt(document()->findBlock(cursor.selectionStart())))
+            language = code->language;
+        if (language.isEmpty())
+            language = documentLanguage();
+        if (language.isEmpty()) {
+            const QString text = cursor.selectedText().trimmed();
+            if (text.startsWith(u'{') || text.startsWith(u'['))
+                language = QStringLiteral("json");
+            else if (text.startsWith(u'<'))
+                language = QStringLiteral("xml");
+        }
+        if (language.isEmpty())
+            message = tr("Can't tell the language of the selection: put it in a fenced code block like ```json");
+        else
+            formatRange(cursor.selectionStart(), cursor.selectionEnd(), language, &message);
+    } else if (const auto code = codeBlockAt(cursor.block())) {
+        if (code->language.isEmpty())
+            message = tr("The code block has no language: add one after the fence, e.g. ```json");
+        else
+            formatRange(code->start, code->end, code->language, &message);
+    } else if (isTableBlock(cursor.block())) {
+        formatTable(tableHeader(cursor.block()), &message);
+    } else if (!documentLanguage().isEmpty()) {
+        formatDocument();
+        return;
+    } else {
+        message = tr("Nothing to format here: select code, or put the cursor in a code block or table");
+    }
+    emit statusMessage(message);
+}
+
+int MarkdownEditor::formatDocument(bool quiet)
+{
+    QString message;
+    const QString language = documentLanguage();
+    if (!language.isEmpty()) {
+        const bool ok = formatRange(0, document()->characterCount() - 1, language, &message);
+        if (!quiet)
+            emit statusMessage(message);
+        return ok ? 1 : 0;
+    }
+
+    // Collect code blocks and tables first, then format bottom-up so positions stay valid.
+    struct Target {
+        int block;
+        bool table;
+    };
+    std::vector<Target> targets;
+    for (QTextBlock b = document()->firstBlock(); b.isValid(); b = b.next()) {
+        const BlockType type = blockType(b);
+        if (type == BlockType::FenceOpen) {
+            targets.push_back({b.blockNumber(), false});
+        } else if (type == BlockType::TableHeader) {
+            targets.push_back({b.blockNumber(), true});
+            b = tableEnd(b);
+        }
+    }
+
+    int formatted = 0;
+    QString firstError;
+    QTextCursor group(document());
+    group.beginEditBlock(); // one undo step for the whole document
+    for (auto it = targets.rbegin(); it != targets.rend(); ++it) {
+        const QTextBlock block = document()->findBlockByNumber(it->block);
+        QString result;
+        if (it->table) {
+            formatted += formatTable(block, &result);
+        } else if (const auto code = codeBlockAt(block.next()); code && !code->language.isEmpty()) {
+            if (FormatterRegistry::instance().canonical(code->language).isEmpty())
+                continue; // unknown languages are left alone
+            if (formatRange(code->start, code->end, code->language, &result))
+                ++formatted;
+            else if (firstError.isEmpty())
+                firstError = result;
+        }
+    }
+    group.endEditBlock();
+
+    if (!quiet) {
+        message = firstError.isEmpty() ? tr("Formatted %n block(s)", nullptr, formatted)
+                                       : tr("Formatted %n block(s); %1", nullptr, formatted).arg(firstError);
+        emit statusMessage(message);
+    }
+    return formatted;
 }

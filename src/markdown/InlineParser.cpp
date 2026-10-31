@@ -131,10 +131,10 @@ private:
         if (pipe >= 0) {
             mark(i + 2, pipe + 1, Marker | LinkUrl, true);
             mark(pipe + 1, close, Link, true);
-            r.links.push_back({i, close + 2, i + 2, pipe});
+            r.links.push_back({i, close + 2, i + 2, pipe, pipe + 1, close, false, true});
         } else {
             mark(i + 2, close, Link, true);
-            r.links.push_back({i, close + 2, i + 2, close});
+            r.links.push_back({i, close + 2, i + 2, close, i + 2, close, false, true});
         }
         end = close + 2;
         return true;
@@ -190,16 +190,26 @@ private:
             ++urlStart;
         while (urlEnd > urlStart && isWs(s[urlEnd - 1]))
             --urlEnd;
-        // Drop an optional title: [text](url "title")
-        for (int j = urlStart; j < urlEnd; ++j) {
-            if (isWs(s[j])) {
-                urlEnd = j;
-                break;
+        int closingBracket = -1;
+        if (urlStart < urlEnd && s[urlStart] == u'<') { // <url with spaces>
+            for (int j = urlStart + 1; j < urlEnd; ++j) {
+                if (s[j] == u'>') {
+                    closingBracket = j;
+                    break;
+                }
             }
         }
-        if (urlStart < urlEnd && s[urlStart] == u'<' && s[urlEnd - 1] == u'>') {
+        if (closingBracket >= 0) {
             ++urlStart;
-            --urlEnd;
+            urlEnd = closingBracket;
+        } else {
+            // Drop an optional title: [text](url "title")
+            for (int j = urlStart; j < urlEnd; ++j) {
+                if (isWs(s[j])) {
+                    urlEnd = j;
+                    break;
+                }
+            }
         }
 
         mark(i, open + 1, Marker, true);
@@ -207,7 +217,7 @@ private:
         mark(close, close + 2, Marker, true);
         mark(close + 2, paren, Marker | LinkUrl, true);
         mark(paren, paren + 1, Marker, true);
-        r.links.push_back({i, paren + 1, urlStart, urlEnd});
+        r.links.push_back({i, paren + 1, urlStart, urlEnd, open + 1, close, image, false});
         end = paren + 1;
         return true;
     }
@@ -217,6 +227,14 @@ private:
         int i = 0;
         while (i < n) {
             int end = 0;
+            // ![[embed]]: an Obsidian-style embedded file.
+            if (!locked[i] && s[i] == u'!' && i + 1 < n && wikiLink(i + 1, end)) {
+                mark(i, i + 1, Marker, true);
+                r.links.back().start = i;
+                r.links.back().image = true;
+                i = end;
+                continue;
+            }
             if (!locked[i] && (s[i] == u'[' || s[i] == u'!')
                 && (wikiLink(i, end) || inlineLink(i, end))) {
                 i = end;
@@ -243,7 +261,7 @@ private:
             const int prefix = startsWith(s, i, u"https://") ? 8 : 7;
             if (end - i > prefix) {
                 mark(i, end, Link, true);
-                r.links.push_back({i, end, i, end});
+                r.links.push_back({i, end, i, end, i, end});
             }
             i = end > i ? end : i + 1;
         }

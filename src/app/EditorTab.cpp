@@ -1,6 +1,8 @@
 #include "app/EditorTab.h"
 
+#include "app/AppSettings.h"
 #include "editor/MarkdownEditor.h"
+#include "plugins/PluginManager.h"
 
 #include <QFileInfo>
 #include <QVBoxLayout>
@@ -35,19 +37,26 @@ bool EditorTab::load(const QString &path, QString &error)
         return false;
 
     m_document = document;
+    // Path first, so relative image paths resolve during the first highlight.
+    m_editor->setDocumentPath(m_document.filePath());
     m_editor->setMarkdown(text);
     m_editor->document()->setModified(false);
-    m_editor->setBaseDirectory(QFileInfo(m_document.filePath()).absolutePath());
     emit stateChanged();
+    PluginManager::instance().notifyOpen(m_document.filePath());
     return true;
 }
 
 bool EditorTab::save(const QString &path, QString &error)
 {
+    if (AppSettings::instance().formatOnSave())
+        m_editor->formatDocument(true);
+    // Plugins may adjust the text before it's written (e.g. update a "modified" date).
+    m_editor->replaceAll(PluginManager::instance().notifyBeforeSave(path, m_editor->markdown()));
     if (!m_document.save(path, m_editor->markdown(), error))
         return false;
     m_editor->document()->setModified(false);
-    m_editor->setBaseDirectory(QFileInfo(m_document.filePath()).absolutePath());
+    m_editor->setDocumentPath(m_document.filePath());
     emit stateChanged();
+    PluginManager::instance().notifySave(m_document.filePath());
     return true;
 }

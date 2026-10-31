@@ -1,0 +1,9 @@
+{
+    "id": "yaml-formatter",
+    "name": "YAML Formatter",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Formats ```yaml code blocks: consistent indentation, \"key: value\" spacing, no trailing spaces.",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

@@ -2,11 +2,13 @@
 
 #include "app/EditorTab.h"
 #include "app/RecentFiles.h"
+#include "app/SettingsDialog.h"
 #include "app/TabCloseButton.h"
 #include "app/TablePicker.h"
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
 #include "panels/FolderPanel.h"
+#include "plugins/PluginManager.h"
 
 #include <QAction>
 #include <QApplication>
@@ -21,6 +23,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolButton>
@@ -75,7 +78,14 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderPanel, &FolderPanel::openFolderRequested, this, &MainWindow::openFolderDialog);
 
     createMenus();
+    statusBar()->setSizeGripEnabled(false);
     addTab();
+
+    PluginManager &plugins = PluginManager::instance();
+    plugins.setEditorProvider([this] { return currentEditor(); });
+    plugins.setMessageSink([this](const QString &message) { statusBar()->showMessage(message, 8000); });
+    connect(&plugins, &PluginManager::commandsChanged, this, &MainWindow::populatePluginsMenu);
+    plugins.reload();
 
     QSettings settings;
     if (!restoreGeometry(settings.value("window/geometry").toByteArray()))
@@ -97,6 +107,8 @@ void MainWindow::createMenus()
     file->addAction(tr("&Save"), QKeySequence::Save, this, [this] { save(currentTab()); });
     file->addAction(tr("Save &As…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), this,
                     [this] { saveAs(currentTab()); });
+    file->addSeparator();
+    file->addAction(tr("Se&ttings…"), QKeySequence(Qt::CTRL | Qt::Key_Comma), this, [this] { showSettings(); });
     file->addSeparator();
     file->addAction(tr("&Close Tab"), QKeySequence(Qt::CTRL | Qt::Key_W), this,
                     [this] { closeTab(m_tabs->currentIndex()); });
@@ -128,6 +140,11 @@ void MainWindow::createMenus()
         format->addAction(wrap.name, wrap.shortcut, this, [this, marker] { currentEditor()->toggleWrap(marker); });
     }
     format->addSeparator();
+    format->addAction(tr("&Format"), QKeySequence(Qt::SHIFT | Qt::ALT | Qt::Key_F), this,
+                      [this] { currentEditor()->formatAtCursor(); });
+    format->addAction(tr("Format &Document"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::ALT | Qt::Key_F), this,
+                      [this] { currentEditor()->formatDocument(); });
+    format->addSeparator();
     format->addAction(tr("Insert &Table…"), this, [this] {
         MarkdownEditor *editor = currentEditor();
         showTablePicker(editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()), false);
@@ -151,8 +168,30 @@ void MainWindow::createMenus()
     view->addAction(tr("Zoom &In"), QKeySequence::ZoomIn, this, [this] { currentEditor()->zoomIn(1); });
     view->addAction(tr("Zoom &Out"), QKeySequence::ZoomOut, this, [this] { currentEditor()->zoomOut(1); });
 
+    m_pluginsMenu = menuBar()->addMenu(tr("&Plugins"));
+    populatePluginsMenu();
+
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     help->addAction(tr("&About MDEditor"), this, &MainWindow::about);
+}
+
+void MainWindow::populatePluginsMenu()
+{
+    m_pluginsMenu->clear();
+    const QList<PluginManager::Command> commands = PluginManager::instance().commands();
+    for (const PluginManager::Command &command : commands) {
+        const QString plugin = command.plugin;
+        const QString id = command.id;
+        QAction *action = m_pluginsMenu->addAction(command.name, this, [plugin, id] {
+            PluginManager::instance().runCommand(plugin, id);
+        });
+        action->setShortcut(command.shortcut);
+    }
+    if (commands.isEmpty())
+        m_pluginsMenu->addAction(tr("No plugin commands"))->setEnabled(false);
+    m_pluginsMenu->addSeparator();
+    m_pluginsMenu->addAction(tr("&Manage Plugins…"), this, [this] { showSettings(QStringLiteral("Plugins")); });
+    m_pluginsMenu->addAction(tr("&Reload Plugins"), this, [] { PluginManager::instance().reload(); });
 }
 
 // Flat, Obsidian-like tabs; colors are derived from the palette so light and dark modes both work.
@@ -380,6 +419,8 @@ EditorTab *MainWindow::addTab()
     });
     connect(tab->editor(), &MarkdownEditor::openFileRequested, this, &MainWindow::openFile);
     connect(tab->editor(), &MarkdownEditor::filesDropped, this, &MainWindow::openFiles);
+    connect(tab->editor(), &MarkdownEditor::statusMessage, this,
+            [this](const QString &message) { statusBar()->showMessage(message, 8000); });
 
     const int index = m_tabs->addTab(tab, QString());
     auto *closeButton = new TabCloseButton(m_tabs->tabBar());
@@ -531,6 +572,17 @@ QString MainWindow::dialogDirectory() const
     if (!m_folderPanel->rootPath().isEmpty())
         return m_folderPanel->rootPath();
     return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+}
+
+void MainWindow::showSettings(const QString &page)
+{
+    if (!m_settingsDialog)
+        m_settingsDialog = new SettingsDialog(this);
+    if (!page.isEmpty())
+        m_settingsDialog->showPage(page);
+    m_settingsDialog->show();
+    m_settingsDialog->raise();
+    m_settingsDialog->activateWindow();
 }
 
 void MainWindow::about()

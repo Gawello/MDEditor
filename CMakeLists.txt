@@ -16,6 +16,7 @@ include(CTest)
 
 # Qt-independent Markdown parsing, shared by the app and the tests.
 add_library(mdcore STATIC
+    src/format/CodeFormatters.cpp
     src/markdown/BlockParser.cpp
     src/markdown/InlineParser.cpp
     src/markdown/TableParser.cpp
@@ -23,12 +24,14 @@ add_library(mdcore STATIC
 target_include_directories(mdcore PUBLIC src)
 
 if(MDEDITOR_BUILD_APP)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Qml)
     qt_standard_project_setup()
 
-    qt_add_executable(MDEditor WIN32
-        src/main.cpp
+    # Everything but main(), so tests can link the real application code.
+    qt_add_library(mdeditor_app STATIC
+        src/app/AppSettings.cpp src/app/AppSettings.h
         src/app/EditorTab.cpp src/app/EditorTab.h
+        src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/TabCloseButton.cpp src/app/TabCloseButton.h
@@ -37,14 +40,27 @@ if(MDEDITOR_BUILD_APP)
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
         src/editor/MarkdownEditor.cpp src/editor/MarkdownEditor.h
+        src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
+        src/plugins/PluginApi.cpp src/plugins/PluginApi.h
+        src/plugins/PluginManager.cpp src/plugins/PluginManager.h
+        src/theme/Theme.cpp src/theme/Theme.h
+        src/theme/ThemeManager.cpp src/theme/ThemeManager.h
     )
-    target_link_libraries(MDEditor PRIVATE mdcore Qt6::Widgets)
+    target_link_libraries(mdeditor_app PUBLIC mdcore Qt6::Widgets Qt6::Qml)
+
+    qt_add_executable(MDEditor WIN32 src/main.cpp)
+    target_link_libraries(MDEditor PRIVATE mdeditor_app)
     target_compile_definitions(MDEditor PRIVATE MDEDITOR_VERSION="${PROJECT_VERSION}")
 
-    if(WIN32)
-        # Make the build directory runnable as is (from an IDE or by double click): copy the Qt and
-        # compiler runtime DLLs next to the executable and point Qt at its plugins via qt.conf.
+    # Make a build-directory executable runnable as is (from an IDE or by double click) on Windows:
+    # copy the Qt and compiler runtime DLLs next to it and point Qt at its plugins via qt.conf.
+    # NO_QT_CONF: the target shares its output directory with one that already writes qt.conf.
+    function(mdeditor_make_runnable target)
+        cmake_parse_arguments(PARSE_ARGV 1 arg "NO_QT_CONF" "" "")
+        if(NOT WIN32)
+            return()
+        endif()
         set(runtime_dlls "")
         if(MINGW)
             get_filename_component(compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -54,14 +70,17 @@ if(MDEDITOR_BUILD_APP)
                 endif()
             endforeach()
         endif()
-        add_custom_command(TARGET MDEditor POST_BUILD
+        add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:MDEditor> ${runtime_dlls} $<TARGET_FILE_DIR:MDEditor>
+                $<TARGET_RUNTIME_DLLS:${target}> ${runtime_dlls} $<TARGET_FILE_DIR:${target}>
             COMMAND_EXPAND_LISTS
         )
-        file(GENERATE OUTPUT "$<TARGET_FILE_DIR:MDEditor>/qt.conf"
-            CONTENT "[Paths]\nPrefix=${QT6_INSTALL_PREFIX}\n")
-    endif()
+        if(NOT arg_NO_QT_CONF)
+            file(GENERATE OUTPUT "$<TARGET_FILE_DIR:${target}>/qt.conf"
+                CONTENT "[Paths]\nPrefix=${QT6_INSTALL_PREFIX}\n")
+        endif()
+    endfunction()
+    mdeditor_make_runnable(MDEditor)
 
     include(GNUInstallDirs)
     install(TARGETS MDEditor

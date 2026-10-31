@@ -1,0 +1,9 @@
+{
+    "id": "sort-lines",
+    "name": "Sort Lines",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Sorts the selected lines alphabetically (or in reverse).",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

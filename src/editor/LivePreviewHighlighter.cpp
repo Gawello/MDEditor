@@ -3,6 +3,7 @@
 #include "markdown/InlineParser.h"
 #include "markdown/TableParser.h"
 
+#include <QFontMetricsF>
 #include <QTextDocument>
 #include <QTimer>
 
@@ -131,11 +132,17 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
         setCurrentBlockUserData(data);
     }
     data->info = result.info;
+    data->image.clear();
+    data->imageWidth = 0;
+    data->imageShown = false;
     recheckPreviousBlock(text);
 
     const md::BlockInfo &b = result.info;
     const bool active = isActive(currentBlock().blockNumber());
     const int length = int(text.size());
+
+    if (b.type == BlockType::Paragraph && highlightImageLine(text, data, active))
+        return;
 
     switch (b.type) {
     case BlockType::Blank:
@@ -229,6 +236,46 @@ void LivePreviewHighlighter::highlightTableRow(const QString &text, md::BlockTyp
         if (cell.end > cell.start)
             applyInline(text.mid(cell.start, cell.end - cell.start), cell.start, base, true);
     }
+}
+
+// A line holding nothing but an image is replaced by the image (painted by the editor). The line gets
+// the image's height from one invisible, very tall character; everything else is collapsed.
+// Returns true when the line has been formatted.
+bool LivePreviewHighlighter::highlightImageLine(const QString &text, BlockData *data, bool active)
+{
+    const QString trimmed = text.trimmed();
+    if (!trimmed.startsWith(u'!'))
+        return false;
+    const md::InlineResult parsed = md::parseInline(toView(text));
+    if (parsed.links.size() != 1 || !parsed.links.front().image)
+        return false;
+    const md::LinkRange &link = parsed.links.front();
+    const int first = int(text.indexOf(trimmed));
+    if (link.start != first || link.end != first + trimmed.size())
+        return false;
+
+    data->image = text.mid(link.urlStart, link.urlEnd - link.urlStart);
+    // Width hint: ![[img.png|300]] (the alias) or ![alt|300](img.png) (after the last '|').
+    const QString alt = text.mid(link.textStart, link.textEnd - link.textStart);
+    const QString hint = link.wiki ? alt : (alt.contains(u'|') ? alt.section(u'|', -1) : QString());
+    data->imageWidth = hint.section(u'x', 0, 0).trimmed().toInt();
+
+    if (active || !m_imageSize)
+        return false;
+    const QSizeF size = m_imageSize(data->image, data->imageWidth);
+    if (size.isEmpty())
+        return false; // not loadable: keep it visible as a link
+
+    QFont probe = m_theme->baseFont;
+    probe.setPointSizeF(100);
+    const QFontMetricsF metrics(probe);
+    QTextCharFormat tall = invisible({});
+    tall.setFontPointSize(100 * (size.height() + 2 * imageVerticalPadding) / (metrics.ascent() + metrics.descent()));
+
+    setFormat(0, int(text.size()), collapsed({}));
+    setFormat(0, 1, tall);
+    data->imageShown = true;
+    return true;
 }
 
 // Whether a line is a table header depends on the line below it. When this line changes in a way

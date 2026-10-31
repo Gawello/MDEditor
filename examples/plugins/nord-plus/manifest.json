@@ -1,0 +1,9 @@
+{
+    "id": "nord-plus",
+    "name": "Nord+ Theme",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Adds a darker Nord variant to Settings → Appearance.",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

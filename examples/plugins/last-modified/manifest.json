@@ -1,0 +1,9 @@
+{
+    "id": "last-modified",
+    "name": "Last Modified",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Updates a \"modified:\" field in the front matter every time the note is saved.",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

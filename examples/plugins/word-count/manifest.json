@@ -1,0 +1,9 @@
+{
+    "id": "word-count",
+    "name": "Word Count",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Shows the number of words and characters in the document or the selection.",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

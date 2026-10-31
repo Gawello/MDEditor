@@ -1,4 +1,6 @@
 #include "app/MainWindow.h"
+#include "plugins/PluginManager.h"
+#include "theme/ThemeManager.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -18,9 +20,12 @@ int main(int argc, char *argv[])
                                  QStringLiteral("[files...]"));
     parser.process(app);
 
+    ThemeManager::instance().initialize();
     MainWindow window;
     window.show();
     window.restoreSession(parser.positionalArguments());
 
-    return app.exec();
+    const int result = app.exec();
+    PluginManager::instance().shutdown();
+    return result;
 }

@@ -9,6 +9,7 @@ class QMenu;
 class QSplitter;
 class QTabWidget;
 class QToolButton;
+class SettingsDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -52,10 +53,14 @@ private:
     QIcon tableIcon() const;
     QString dialogDirectory() const;
     void about();
+    void showSettings(const QString &page = {});
+    void populatePluginsMenu();
 
     QTabWidget *m_tabs;
     FolderPanel *m_folderPanel;
     QSplitter *m_splitter;
     QMenu *m_recentMenu = nullptr;
+    QMenu *m_pluginsMenu = nullptr;
     QToolButton *m_tableButton = nullptr;
+    SettingsDialog *m_settingsDialog = nullptr;
 };

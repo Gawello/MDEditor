@@ -1,0 +1,9 @@
+{
+    "id": "insert-date",
+    "name": "Insert Date",
+    "version": "1.0.0",
+    "author": "MDEditor",
+    "description": "Inserts today's date (YYYY-MM-DD) at the cursor.",
+    "main": "main.js",
+    "minAppVersion": "0.1.0"
+}

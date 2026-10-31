@@ -23,6 +23,10 @@ struct LinkRange {
     int end = 0;
     int urlStart = 0; // link target, [urlStart, urlEnd)
     int urlEnd = 0;
+    int textStart = 0; // link text / image alt / wiki alias, [textStart, textEnd)
+    int textEnd = 0;
+    bool image = false; // ![alt](src) or ![[embed]]
+    bool wiki = false;  // [[target]] / [[target|alias]]
 };
 
 struct InlineResult {

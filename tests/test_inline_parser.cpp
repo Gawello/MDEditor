@@ -149,6 +149,37 @@ TEST_CASE(wiki_links)
     CHECK(all(a, 11, 16, Link));
 }
 
+TEST_CASE(images)
+{
+    const std::u16string_view inlineImage = u"![alt|300](img/a b.png)";
+    // Without angle brackets the URL stops at the space (the rest would be a title).
+    const auto r = parseInline(inlineImage);
+    CHECK(r.links.size() == 1);
+    CHECK(r.links[0].image);
+    CHECK(!r.links[0].wiki);
+    CHECK(url(inlineImage, r.links[0]) == u"img/a");
+    CHECK(std::u16string(inlineImage.substr(r.links[0].textStart, r.links[0].textEnd - r.links[0].textStart))
+          == u"alt|300");
+
+    const std::u16string_view bracketed = u"![](<img/a b.png>)";
+    const auto b = parseInline(bracketed);
+    CHECK(b.links.size() == 1);
+    CHECK(url(bracketed, b.links[0]) == u"img/a b.png");
+
+    const std::u16string_view embed = u"![[photo.jpg|200]]";
+    const auto e = parseInline(embed);
+    CHECK(e.links.size() == 1);
+    CHECK(e.links[0].image);
+    CHECK(e.links[0].wiki);
+    CHECK(e.links[0].start == 0);
+    CHECK(e.links[0].end == int(embed.size()));
+    CHECK(url(embed, e.links[0]) == u"photo.jpg");
+    CHECK(all(e, 0, 1, Marker));
+
+    CHECK(!parseInline(u"[link](x)").links[0].image);
+    CHECK(!parseInline(u"[[note]]").links[0].image);
+}
+
 TEST_CASE(autolinks)
 {
     const std::u16string_view text = u"go https://ex.com/a_b_c. now";
