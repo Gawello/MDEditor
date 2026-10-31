@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+class FindBar;
 class MarkdownEditor;
 
 // One open file: the editor widget plus the file it's bound to.
@@ -14,6 +15,7 @@ public:
     explicit EditorTab(QWidget *parent = nullptr);
 
     MarkdownEditor *editor() const { return m_editor; }
+    FindBar *findBar() const { return m_findBar; }
     QString filePath() const { return m_document.filePath(); }
     QString displayName() const { return m_document.displayName(); }
     bool isUntitled() const { return m_document.isUntitled(); }
@@ -29,5 +31,6 @@ signals:
 
 private:
     MarkdownEditor *m_editor;
+    FindBar *m_findBar;
     Document m_document;
 };

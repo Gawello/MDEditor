@@ -10,7 +10,7 @@ add_test(NAME mdcore_tests COMMAND mdcore_tests)
 
 # Application-level tests (Qt, run offscreen): plugins and example plugins.
 if(TARGET mdeditor_app)
-    add_executable(app_tests app_test_main.cpp test_plugins.cpp)
+    add_executable(app_tests app_test_main.cpp test_plugins.cpp test_find.cpp)
     target_link_libraries(app_tests PRIVATE mdeditor_app)
     target_compile_definitions(app_tests PRIVATE
         MDEDITOR_EXAMPLE_PLUGINS="${PROJECT_SOURCE_DIR}/examples/plugins")

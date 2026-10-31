@@ -20,6 +20,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Links: `[text](url)`, bare URLs and `[[wiki links]]`. Ctrl+click opens them (relative links resolve next to the current file)
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
+- Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`
+  groups, all matches highlighted, Replace All as one undo step
 - Tabs (Ctrl+N new, Ctrl+W or middle click to close, Ctrl+Tab to switch); open tabs are restored on the next start
 - File → Open Recent with the last 10 files
 - Optional folder panel (Ctrl+Shift+E) to browse any folder, without indexing anything

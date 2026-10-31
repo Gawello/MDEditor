@@ -31,6 +31,7 @@ if(MDEDITOR_BUILD_APP)
     qt_add_library(mdeditor_app STATIC
         src/app/AppSettings.cpp src/app/AppSettings.h
         src/app/EditorTab.cpp src/app/EditorTab.h
+        src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h

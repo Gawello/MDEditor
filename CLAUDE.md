@@ -46,8 +46,10 @@ cmake --build --preset core; ctest --preset core          # parser only, no Qt n
   `tests/TestHarness.h` (`TEST_CASE`, `CHECK`), not Qt Test, so they build without Qt.
 - App-level tests (`tests/test_plugins.cpp`, `app_tests`) use the same harness with a QApplication and their
   own QSettings organization (`MDEditorTests`), so they never touch the user's settings.
-- Visual checks: launch the app and take window screenshots. Sending keys with SendKeys only works when Windows
-  grants the window focus, which fails while the user is busy at the machine.
+- Visual checks: launch the app and take window screenshots, **without sending keystrokes**. Never use SendKeys
+  (or any synthetic input) on the user's desktop: when Windows doesn't give the app focus, the keys go to
+  whatever window the user has active (this once opened the browser's history with Ctrl+H and typed into it).
+  Drive UI behavior from offscreen tests or a scratch driver instead.
 - For editor behavior that doesn't need real focus, a scratch driver linking the editor sources and run with
   `QT_QPA_PLATFORM=offscreen` works well: send `QKeyEvent`/`QMouseEvent` with `QApplication::sendEvent`, print
   `markdown()`, and save `widget->grab()` images. Offscreen has no fonts, so glyphs render as boxes.
@@ -73,7 +75,8 @@ src/theme/              Theme (palette + Markdown colors, JSON), ThemeManager (p
 src/plugins/            PluginManager (discovery, QJSEngine per plugin, 3 s watchdog), PluginApi (`app`, `editor`)
 src/document/Document   load/save with encoding details
 src/panels/FolderPanel  QFileSystemModel tree (no icons, .md suffix hidden)
-src/app/                MainWindow (tabs, menus, status bar, session), EditorTab, AppSettings, SettingsDialog,
+src/app/                MainWindow (tabs, menus, status bar, session), EditorTab (editor + FindBar),
+                        FindBar (find/replace, highlights via extraSelections), AppSettings, SettingsDialog,
                         RecentFiles, TabCloseButton, TablePicker
 docs/                   plugins.md (plugin API), themes.md (theme JSON); examples/plugins/ = sample plugins
 ```
@@ -129,6 +132,10 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
 - Use `document()->toRawText()` (not `toPlainText()`, which turns NBSP into spaces) when saving.
 - Wheel events over the viewport margins (centered text column) don't reach the viewport; `MarkdownEditor::event`
   forwards them.
+- `QTextDocument::find(QRegularExpression, …)` ignores the pattern's case option and uses the
+  `FindCaseSensitively` flag instead (case-insensitive without it); `FindBar::findFrom` sets the flag.
+- To render a widget with real fonts but nothing on screen, set `Qt::WA_DontShowOnScreen`, `show()` it and
+  `grab()` (no offscreen platform needed).
 - On Windows, Qt `#define`s `main` (to `qMain`): never name a member or variable `main`.
 - `qt_standard_project_setup()` puts all executables in one output directory; only one target may generate
   `qt.conf` there (`mdeditor_make_runnable(target NO_QT_CONF)`).

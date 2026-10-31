@@ -1,6 +1,7 @@
 #include "app/EditorTab.h"
 
 #include "app/AppSettings.h"
+#include "app/FindBar.h"
 #include "editor/MarkdownEditor.h"
 #include "plugins/PluginManager.h"
 
@@ -10,9 +11,12 @@
 EditorTab::EditorTab(QWidget *parent)
     : QWidget(parent)
     , m_editor(new MarkdownEditor(this))
+    , m_findBar(new FindBar(m_editor, this))
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(m_findBar);
     layout->addWidget(m_editor);
     setFocusProxy(m_editor);
 

@@ -1,6 +1,7 @@
 #include "app/MainWindow.h"
 
 #include "app/EditorTab.h"
+#include "app/FindBar.h"
 #include "app/RecentFiles.h"
 #include "app/SettingsDialog.h"
 #include "app/TabCloseButton.h"
@@ -122,6 +123,13 @@ void MainWindow::createMenus()
     edit->addAction(tr("&Copy"), QKeySequence::Copy, this, [this] { currentEditor()->copy(); });
     edit->addAction(tr("&Paste"), QKeySequence::Paste, this, [this] { currentEditor()->paste(); });
     edit->addAction(tr("Select &All"), QKeySequence::SelectAll, this, [this] { currentEditor()->selectAll(); });
+    edit->addSeparator();
+    edit->addAction(tr("&Find…"), QKeySequence::Find, this, [this] { currentTab()->findBar()->openFind(); });
+    edit->addAction(tr("R&eplace…"), QKeySequence(Qt::CTRL | Qt::Key_H), this,
+                    [this] { currentTab()->findBar()->openReplace(); });
+    edit->addAction(tr("Find &Next"), QKeySequence::FindNext, this, [this] { currentTab()->findBar()->findNext(); });
+    edit->addAction(tr("Find Pre&vious"), QKeySequence::FindPrevious, this,
+                    [this] { currentTab()->findBar()->findPrevious(); });
 
     QMenu *format = menuBar()->addMenu(tr("F&ormat"));
     const struct {
