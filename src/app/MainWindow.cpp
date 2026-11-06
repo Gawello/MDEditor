@@ -5,6 +5,7 @@
 #include "app/RecentFiles.h"
 #include "app/CloudDrive.h"
 #include "app/SettingsDialog.h"
+#include "app/SymbolPicker.h"
 #include "app/TabCloseButton.h"
 #include "app/TablePicker.h"
 #include "editor/EditorTheme.h"
@@ -18,6 +19,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
@@ -59,7 +61,19 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_tableButton, &QToolButton::clicked, this, [this] {
         showTablePicker(m_tableButton->mapToGlobal(QPoint(m_tableButton->width(), m_tableButton->height())), true);
     });
-    m_tabs->setCornerWidget(m_tableButton, Qt::TopRightCorner);
+    m_symbolButton = new QToolButton(m_tabs);
+    m_symbolButton->setAutoRaise(true);
+    m_symbolButton->setToolTip(tr("Insert symbol or emoji"));
+    m_symbolButton->setFocusPolicy(Qt::NoFocus);
+    connect(m_symbolButton, &QToolButton::clicked, this, &MainWindow::toggleSymbolPicker);
+
+    auto *corner = new QWidget(m_tabs); // the corner takes one widget
+    auto *cornerLayout = new QHBoxLayout(corner);
+    cornerLayout->setContentsMargins(0, 0, 0, 0);
+    cornerLayout->setSpacing(0);
+    cornerLayout->addWidget(m_symbolButton);
+    cornerLayout->addWidget(m_tableButton);
+    m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
     applyStyle();
 
     m_splitter->addWidget(m_folderPanel);
@@ -180,6 +194,7 @@ void MainWindow::createMenus()
         MarkdownEditor *editor = currentEditor();
         showTablePicker(editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()), false);
     });
+    format->addAction(tr("Insert S&ymbol…"), this, &MainWindow::toggleSymbolPicker);
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     QAction *togglePanel = view->addAction(tr("&Folder Panel"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this,
@@ -254,6 +269,7 @@ void MainWindow::applyStyle()
                                    EditorTheme::mix(window, text, 0.55).name(),
                                    EditorTheme::mix(window, text, 0.08).name()));
     m_tableButton->setIcon(tableIcon());
+    m_symbolButton->setIcon(symbolIcon());
 }
 
 void MainWindow::showTablePicker(const QPoint &globalPos, bool alignRight)
@@ -263,6 +279,20 @@ void MainWindow::showTablePicker(const QPoint &globalPos, bool alignRight)
         currentEditor()->insertTable(rows, columns);
     }, Qt::QueuedConnection); // back in the event loop, so the popup's X11 grab has been released
     picker->popup(alignRight ? globalPos - QPoint(picker->width(), 0) : globalPos);
+}
+
+void MainWindow::toggleSymbolPicker()
+{
+    if (!m_symbolPicker) {
+        m_symbolPicker = new SymbolPicker(m_symbolButton, this);
+        connect(m_symbolPicker, &SymbolPicker::symbolPicked, this, [this](const QString &symbol) {
+            currentEditor()->insertPlainText(symbol); // the picker takes no focus, so typing just goes on
+        });
+    }
+    if (m_symbolPicker->isVisible())
+        m_symbolPicker->hide();
+    else
+        m_symbolPicker->showAt(m_symbolButton->mapToGlobal(QPoint(m_symbolButton->width(), m_symbolButton->height())));
 }
 
 // A small grid icon drawn in the current text color, so it fits light and dark themes.
@@ -284,6 +314,26 @@ QIcon MainWindow::tableIcon() const
     painter.drawLine(QPointF(frame.left(), 9.9), QPointF(frame.right(), 9.9));
     painter.drawLine(QPointF(6.0, frame.top()), QPointF(6.0, frame.bottom()));
     painter.drawLine(QPointF(10.5, frame.top()), QPointF(10.5, frame.bottom()));
+    return QIcon(pixmap);
+}
+
+// An omega in the same muted text color as the table icon.
+QIcon MainWindow::symbolIcon() const
+{
+    const qreal dpr = devicePixelRatioF();
+    QPixmap pixmap(QSize(16, 16) * dpr);
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QColor color = palette().color(QPalette::WindowText);
+    color.setAlphaF(0.75f);
+    painter.setPen(color);
+    QFont font = painter.font();
+    font.setPixelSize(14);
+    painter.setFont(font);
+    painter.drawText(QRectF(0, 0, 16, 16), Qt::AlignCenter, QStringLiteral("Ω"));
     return QIcon(pixmap);
 }
 

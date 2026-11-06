@@ -15,4 +15,8 @@ struct EntityMatch {
 // by CommonMark's rules. Numeric references to invalid code points give U+FFFD.
 std::optional<EntityMatch> matchEntity(std::u16string_view text, int at);
 
+// How to spell `symbol` with character references: "&rarr;" if it has a name, otherwise each code point by
+// name or number ("&#x1F680;"). ASCII without a name stays as it is. matchEntity undoes this.
+std::u16string entityFor(std::u16string_view symbol);
+
 } // namespace md

@@ -102,6 +102,7 @@ void MarkdownEditor::applyFontSettings()
     const QString family = AppSettings::instance().fontFamily();
     if (!family.isEmpty())
         base.setFamily(family);
+    base.setFamilies(EditorTheme::withEmoji(base));
     base.setPointSizeF(AppSettings::instance().fontSize());
     setFont(base); // FontChange re-applies the theme
 }

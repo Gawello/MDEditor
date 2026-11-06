@@ -40,6 +40,8 @@ if(MDEDITOR_BUILD_APP)
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
+        src/app/SymbolPicker.cpp src/app/SymbolPicker.h
+        src/app/SymbolSets.cpp src/app/SymbolSets.h
         src/app/TabCloseButton.cpp src/app/TabCloseButton.h
         src/app/TablePicker.cpp src/app/TablePicker.h
         src/document/Document.cpp src/document/Document.h

@@ -3,6 +3,7 @@
 #include "theme/ThemeManager.h"
 
 #include <QFontDatabase>
+#include <QFontInfo>
 
 #include <algorithm>
 
@@ -20,11 +21,28 @@ qreal EditorTheme::headingPointSize(int level) const
     return base * scale[std::clamp(level, 1, 6) - 1];
 }
 
+QStringList EditorTheme::withEmoji(const QFont &font)
+{
+    static const QString emoji = [] {
+        const QStringList installed = QFontDatabase::families();
+        for (const char *candidate : {"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twemoji Mozilla"}) {
+            if (installed.contains(QLatin1String(candidate)))
+                return QString::fromLatin1(candidate);
+        }
+        return QString();
+    }();
+    // The resolved name: an alias such as "Monospace" stops working as soon as the list has a second entry.
+    QStringList families{QFontInfo(font).family()};
+    if (!emoji.isEmpty() && !families.contains(emoji))
+        families << emoji;
+    return families;
+}
+
 EditorTheme EditorTheme::fromPalette(const QPalette &palette, const QFont &baseFont)
 {
     EditorTheme t;
     t.baseFont = baseFont;
-    t.monoFamilies = QFontDatabase::systemFont(QFontDatabase::FixedFont).families();
+    t.monoFamilies = withEmoji(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     const QColor background = palette.color(QPalette::Base);
     const bool dark = background.lightnessF() < 0.5;

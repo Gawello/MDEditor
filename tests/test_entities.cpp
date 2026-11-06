@@ -64,6 +64,32 @@ TEST_CASE(entity_numeric_malformed)
     CHECK(!matchEntity(u"&#x1234567;", 0)); // seven hex digits
 }
 
+TEST_CASE(entity_for_prefers_the_best_known_name)
+{
+    CHECK(entityFor(u"\u2192") == u"&rarr;");
+    CHECK(entityFor(u"\u2026") == u"&hellip;"); // not &mldr;
+    CHECK(entityFor(u"\u00A9") == u"&copy;");   // not &COPY;
+    CHECK(entityFor(u"\u2264") == u"&le;");
+    CHECK(entityFor(u"\u03B1") == u"&alpha;");
+    CHECK(entityFor(u"&") == u"&amp;");
+    CHECK(entityFor(u"\u2242\u0338") == u"&nesim;"); // a name for two code points
+}
+
+TEST_CASE(entity_for_falls_back_to_numbers)
+{
+    CHECK(entityFor(u"\U0001F680") == u"&#x1F680;");
+    CHECK(entityFor(u"\u2764\uFE0F") == u"&#x2764;&#xFE0F;");
+    CHECK(entityFor(u"z\u0142") == u"z&lstrok;");
+}
+
+TEST_CASE(entity_for_undoes_match_for_every_name)
+{
+    for (const std::u16string_view text : {u"\u2192", u"\U0001D504", u"\U0001F680", u"\u20AC"}) {
+        const std::u16string spelled = entityFor(text);
+        CHECK(decoded(spelled) == text);
+    }
+}
+
 TEST_CASE(inline_finds_entities_in_text)
 {
     const InlineResult r = parseInline(u"a &rarr; b &#8594;");

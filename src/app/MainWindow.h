@@ -11,6 +11,7 @@ class QTabWidget;
 class QToolButton;
 class CloudDrive;
 class SettingsDialog;
+class SymbolPicker;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -54,6 +55,8 @@ private:
     void showTablePicker(const QPoint &globalPos, bool alignRight);
     void openPendingDriveItems();
     QIcon tableIcon() const;
+    QIcon symbolIcon() const;
+    void toggleSymbolPicker();
     QString dialogDirectory() const;
     void about();
     void showSettings(const QString &page = {});
@@ -65,6 +68,8 @@ private:
     QMenu *m_recentMenu = nullptr;
     QMenu *m_pluginsMenu = nullptr;
     QToolButton *m_tableButton = nullptr;
+    QToolButton *m_symbolButton = nullptr;
+    SymbolPicker *m_symbolPicker = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
     CloudDrive *m_cloudDrive;
     // Session items on Google Drive, waiting for the mount.

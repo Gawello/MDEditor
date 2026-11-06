@@ -59,8 +59,8 @@ elseif(UNIX AND NOT APPLE)
     # System libraries the bundled Qt (xcb platform plugin) needs; t64 names for Ubuntu 24.04+.
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
         "libc6, libstdc++6, libgl1, libegl1, libfontconfig1, libfreetype6, libdbus-1-3, libglib2.0-0t64 | libglib2.0-0, libxkbcommon0, libxkbcommon-x11-0, libx11-xcb1, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0, libxcb-xinerama0, libxcb-xkb1")
-    # Google Drive connection; apt installs these by default, and the app works without them.
-    set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "rclone, fuse3")
+    # Google Drive connection and color emoji; apt installs these by default, and the app works without them.
+    set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "rclone, fuse3, fonts-noto-color-emoji")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${PROJECT_SOURCE_DIR}/packaging/linux/deb/postinst"
         "${PROJECT_SOURCE_DIR}/packaging/linux/deb/prerm")

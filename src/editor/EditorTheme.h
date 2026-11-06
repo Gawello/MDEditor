@@ -23,6 +23,10 @@ struct EditorTheme {
 
     static EditorTheme fromPalette(const QPalette &palette, const QFont &baseFont);
 
+    // The family `font` resolves to, plus an installed color emoji font. Left to font fallback, emoji come
+    // out as empty boxes or in a gray symbol font on Linux.
+    static QStringList withEmoji(const QFont &font);
+
     // Linear blend between two colors, t = 0 gives a, t = 1 gives b.
     static QColor mix(const QColor &a, const QColor &b, qreal t);
 };

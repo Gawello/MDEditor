@@ -13,6 +13,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Tables rendered as an aligned grid (column alignment, inline formatting in cells); click a cell to edit
   the Markdown, Tab / Shift+Tab move between cells, Enter adds a row. The table button (top right) or
   Format → Insert Table… opens a Word-style grid to insert an empty table
+- Symbols and emoji: the Ω button next to the table button, or Format → Insert Symbol…, opens a drop-down that stays
+  open while you insert several in a row, and closes when you click elsewhere, press Esc or leave the application
 - Images: a line holding only `![alt](path)` or `![[path]]` shows the image, scaled to the text column.
   Set a width with `![[img.png|300]]` or `![alt|300](img.png)`. Paths are relative to the Markdown file.
   Dropping or pasting image files inserts links to them; pasting a screenshot or a copied image saves it
