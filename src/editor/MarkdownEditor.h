@@ -18,6 +18,8 @@
 class LivePreviewHighlighter;
 class QTimer;
 
+class BlockData;
+
 class MarkdownEditor : public QPlainTextEdit {
     Q_OBJECT
 
@@ -120,6 +122,7 @@ private:
     void placeInTableCell(const QTextBlock &block, int cell, bool select);
     void updateMargins();
     md::BlockInfo blockInfo(const QTextBlock &block) const;
+    void paintEntities(QPainter &painter, const QTextBlock &block, const BlockData &data) const;
     QRectF characterRect(const QTextBlock &block, int position) const;
     bool continueList();
     bool indentListItem(bool outdent);

@@ -2,7 +2,10 @@
 
 #include "editor/EditorTheme.h"
 #include "markdown/BlockParser.h"
+#include "markdown/InlineParser.h"
 
+#include <QColor>
+#include <QFont>
 #include <QSizeF>
 #include <QSyntaxHighlighter>
 #include <QTextBlock>
@@ -10,11 +13,21 @@
 
 #include <functional>
 #include <string_view>
+#include <vector>
 
 inline std::u16string_view toView(const QString &text)
 {
     return {reinterpret_cast<const char16_t *>(text.utf16()), size_t(text.size())};
 }
+
+// A character reference shown as what it stands for: the editor paints `text` over the space the
+// highlighter reserved at `position`.
+struct EntityGlyph {
+    int position = 0;
+    QString text;
+    QFont font;
+    QColor color; // invalid: the default text color
+};
 
 // Parsed block structure, attached to every QTextBlock so the editor can paint
 // decorations (quote bars, bullets, checkboxes, code backgrounds, tables) without re-parsing.
@@ -24,6 +37,7 @@ public:
     QString image;       // target of the only thing on this line, if that's an image
     int imageWidth = 0;  // requested width (![[img.png|300]], ![alt|300](img.png)), 0 = natural
     bool imageShown = false; // the line is laid out to show the image instead of its text
+    std::vector<EntityGlyph> entities;
 };
 
 // Vertical space above and below an image rendered in place of its line.
@@ -60,6 +74,7 @@ private:
     bool isActive(int blockNumber) const;
     void highlightTableRow(const QString &text, md::BlockType type, bool active);
     void applyInline(const QString &text, int offset, const QTextCharFormat &base, bool active);
+    void showEntity(const md::EntityRange &entity, int offset);
     void recheckPreviousBlock(const QString &text);
     bool highlightImageLine(const QString &text, BlockData *data, bool active);
     QTextCharFormat dimmed(QTextCharFormat format) const;

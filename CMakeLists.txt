@@ -18,6 +18,7 @@ include(CTest)
 add_library(mdcore STATIC
     src/format/CodeFormatters.cpp
     src/markdown/BlockParser.cpp
+    src/markdown/Entities.cpp
     src/markdown/InlineParser.cpp
     src/markdown/TableParser.cpp
 )

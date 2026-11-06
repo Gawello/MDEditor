@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -16,6 +17,7 @@ enum Style : std::uint16_t {
     Link      = 1 << 5,
     LinkUrl   = 1 << 6,
     Highlight = 1 << 7,
+    Entity    = 1 << 8, // character reference, shown as what it stands for (see InlineResult::entities)
 };
 
 struct LinkRange {
@@ -29,9 +31,16 @@ struct LinkRange {
     bool wiki = false;  // [[target]] / [[target|alias]]
 };
 
+struct EntityRange {
+    int start = 0; // the reference, [start, end)
+    int end = 0;
+    std::u16string text; // what it stands for
+};
+
 struct InlineResult {
     std::vector<std::uint16_t> styles; // one entry per UTF-16 code unit
     std::vector<LinkRange> links;
+    std::vector<EntityRange> entities; // in text order
 };
 
 InlineResult parseInline(std::u16string_view text);

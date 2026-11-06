@@ -1,5 +1,9 @@
 #include "markdown/InlineParser.h"
 
+#include "markdown/Entities.h"
+
+#include <algorithm>
+
 namespace md {
 
 namespace {
@@ -37,6 +41,7 @@ public:
         codeSpansAndEscapes();
         links();
         autolinks();
+        entities(); // after what keeps text literal, before emphasis so "&ast;" can't open any
         emphasis();
         return std::move(r);
     }
@@ -264,6 +269,26 @@ private:
                 r.links.push_back({i, end, i, end, i, end});
             }
             i = end > i ? end : i + 1;
+        }
+    }
+
+    void entities()
+    {
+        int i = 0;
+        while (i < n) {
+            if (locked[i] || s[i] != u'&') {
+                ++i;
+                continue;
+            }
+            const auto match = matchEntity(s, i);
+            const int end = match ? i + match->length : i;
+            if (!match || std::any_of(locked.begin() + i, locked.begin() + end, [](bool value) { return value; })) {
+                ++i;
+                continue;
+            }
+            mark(i, end, Entity, true);
+            r.entities.push_back({i, end, match->text});
+            i = end;
         }
     }
 

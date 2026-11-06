@@ -324,6 +324,7 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
         if (block.blockNumber() == activeBlock)
             continue;
         const md::BlockInfo &info = data->info;
+        paintEntities(painter, block, *data);
 
         switch (info.type) {
         case BlockType::Quote: {
@@ -629,6 +630,25 @@ md::BlockInfo MarkdownEditor::blockInfo(const QTextBlock &block) const
     return md::parseLine(toView(block.text()), state, nextLine).info;
 }
 
+void MarkdownEditor::paintEntities(QPainter &painter, const QTextBlock &block, const BlockData &data) const
+{
+    const QTextLayout *layout = block.layout();
+    if (data.entities.empty() || !layout)
+        return;
+    const QPointF origin = blockBoundingGeometry(block).translated(contentOffset()).topLeft() + layout->position();
+    painter.save();
+    for (const EntityGlyph &glyph : data.entities) {
+        const QTextLine line = layout->lineForTextPosition(glyph.position);
+        if (!line.isValid())
+            continue;
+        painter.setFont(glyph.font);
+        painter.setPen(glyph.color.isValid() ? glyph.color : m_theme.text);
+        painter.drawText(QPointF(origin.x() + line.cursorToX(glyph.position), origin.y() + line.y() + line.ascent()),
+                         glyph.text);
+    }
+    painter.restore();
+}
+
 QRectF MarkdownEditor::characterRect(const QTextBlock &block, int position) const
 {
     const QTextLayout *layout = block.layout();
@@ -890,7 +910,15 @@ std::vector<MarkdownEditor::TextRun> MarkdownEditor::cellRuns(const QString &tex
         while (j < n && parsed.styles[j] == style)
             ++j;
         if (!(style & md::Marker)) {
-            TextRun run{text.mid(i, j - i), font(), m_theme.text, QColor()};
+            QString shown = text.mid(i, j - i);
+            if (style & md::Entity) { // the run may hold several, with nothing between them
+                shown.clear();
+                for (const md::EntityRange &entity : parsed.entities) {
+                    if (entity.start >= i && entity.end <= j)
+                        shown += QString::fromStdU16String(entity.text);
+                }
+            }
+            TextRun run{shown, font(), m_theme.text, QColor()};
             if (header || (style & md::Bold))
                 run.font.setBold(true);
             if (style & md::Italic)

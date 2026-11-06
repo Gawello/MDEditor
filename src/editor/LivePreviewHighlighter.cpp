@@ -138,6 +138,7 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     data->image.clear();
     data->imageWidth = 0;
     data->imageShown = false;
+    data->entities.clear();
     recheckPreviousBlock(text);
 
     const md::BlockInfo &b = result.info;
@@ -348,5 +349,35 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
             setFormat(offset + i, j - i, format);
         }
         i = j;
+    }
+
+    if (!active) {
+        for (const md::EntityRange &entity : parsed.entities)
+            showEntity(entity, offset);
+    }
+}
+
+// The text can't change, so the reference keeps its characters: '&' becomes an invisible slot as wide as
+// the replacement, for the editor to paint on, and the rest collapses.
+void LivePreviewHighlighter::showEntity(const md::EntityRange &entity, int offset)
+{
+    const int position = offset + entity.start;
+    const QTextCharFormat shown = format(position);
+    const QFont font = shown.font().resolve(m_theme->baseFont);
+    const QString text = QString::fromStdU16String(entity.text);
+    const QFontMetricsF metrics(font);
+
+    QTextCharFormat slot = shown;
+    slot.setForeground(Qt::transparent);
+    slot.setFontUnderline(false);
+    slot.setFontStrikeOut(false);
+    slot.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    slot.setFontLetterSpacing(metrics.horizontalAdvance(text) - metrics.horizontalAdvance(u'&'));
+    setFormat(position, 1, slot);
+    setFormat(position + 1, entity.end - entity.start - 1, collapsed(shown));
+
+    if (auto *data = static_cast<BlockData *>(currentBlockUserData())) {
+        const QBrush brush = shown.foreground();
+        data->entities.push_back({position, text, font, brush.style() == Qt::NoBrush ? QColor() : brush.color()});
     }
 }
