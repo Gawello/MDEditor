@@ -119,3 +119,34 @@ TEST_CASE(table_alignment)
     CHECK(lines[2] == u"| wide cell |           1 |");
     CHECK(lines[3] == u"|     x     |             |");
 }
+
+TEST_CASE(table_alignment_uses_display_width)
+{
+    // Precomposed Polish letters: one column each, as before.
+    auto lines = formatTable({u"| a |", u"|---|", u"| \u017C\u00F3\u0142\u0107 |", u"| x |"});
+    CHECK(lines[1] == u"| ---- |");
+    CHECK(lines[3] == u"| x    |");
+
+    // Combining marks add no column.
+    lines = formatTable({u"| a |", u"|---|", u"| z\u0307o\u0301 |", u"| abc |"});
+    CHECK(lines[1] == u"| --- |");
+    CHECK(lines[2] == u"| z\u0307o\u0301  |");
+
+    // CJK and emoji (outside the BMP too) take two columns.
+    lines = formatTable({u"| a |", u"|---|", u"| \u65E5\u672C |", u"| \U0001F680 |", u"| \u2705 x |", u"| ascii |"});
+    CHECK(lines[1] == u"| ----- |");
+    CHECK(lines[2] == u"| \u65E5\u672C  |");
+    CHECK(lines[3] == u"| \U0001F680    |");
+    CHECK(lines[4] == u"| \u2705 x  |");
+
+    // Joined emoji and skin tones show as one glyph.
+    lines = formatTable({u"| a |", u"|---|", u"| \U0001F469\u200D\U0001F4BB |", u"| \U0001F44D\U0001F3FD |", u"| abcd |"});
+    CHECK(lines[2] == u"| \U0001F469\u200D\U0001F4BB   |");
+    CHECK(lines[3] == u"| \U0001F44D\U0001F3FD   |");
+}
+
+TEST_CASE(table_alignment_right_and_center_use_display_width)
+{
+    const auto lines = formatTable({u"| a | b |", u"|--:|:-:|", u"| \u65E5 | \u65E5 |", u"| abcd | abcd |"});
+    CHECK(lines[2] == u"|   \u65E5 |  \u65E5  |");
+}

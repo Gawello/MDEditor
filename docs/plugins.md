@@ -56,7 +56,7 @@ app.registerCommand("Say hi", function () { editor.insert("hi"); }); // name onl
 
 ### `app.registerFormatter(languages, fn)`
 
-Registers a formatter used by **Format** (Shift+Alt+F) and **Format Document** for fenced code blocks in those
+Registers a formatter used by **Prettify** (Shift+Alt+F) and **Prettify Document** for fenced code blocks in those
 languages. It overrides the built-in formatter for the language. `fn(text, options)` gets the code and
 `{ indent }` (spaces per level, from Settings) and returns the formatted code. Throw an `Error` to report a
 problem; the message is shown in the status bar.

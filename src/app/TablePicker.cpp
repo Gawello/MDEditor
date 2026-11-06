@@ -123,7 +123,9 @@ void TablePicker::keyPressEvent(QKeyEvent *event)
 
 void TablePicker::choose()
 {
+    // Close first: while a Qt::Popup is open on X11 it grabs the mouse and keyboard of the whole desktop,
+    // so any slow work done with it open freezes every application.
+    close();
     if (m_rows > 0 && m_columns > 0)
         emit picked(m_rows, m_columns);
-    close();
 }

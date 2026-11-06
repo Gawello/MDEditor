@@ -7,11 +7,13 @@
 #include "markdown/InlineParser.h"
 
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
@@ -24,6 +26,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <numeric>
 
 using md::BlockType;
@@ -228,6 +231,41 @@ void MarkdownEditor::mousePressEvent(QMouseEvent *event)
         }
     }
     QPlainTextEdit::mousePressEvent(event);
+}
+
+QKeySequence MarkdownEditor::prettifyShortcut()
+{
+    return QKeySequence(Qt::SHIFT | Qt::ALT | Qt::Key_F);
+}
+
+QKeySequence MarkdownEditor::prettifyDocumentShortcut()
+{
+    return QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::ALT | Qt::Key_F);
+}
+
+void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
+{
+    const QPoint pos = event->pos();
+    // Prettify works on the cursor, so a right click must put it on what was clicked. A click on the
+    // selection keeps it, and the menu key (no position of its own) leaves the cursor alone.
+    if (event->reason() == QContextMenuEvent::Mouse) {
+        const QTextCursor current = textCursor();
+        const int hit = cursorForPosition(pos).position();
+        const bool onSelection = current.hasSelection() && hit >= current.selectionStart() && hit < current.selectionEnd();
+        if (!onSelection && !focusTableCellAt(pos))
+            setTextCursor(cursorForPosition(pos));
+    }
+
+    const std::unique_ptr<QMenu> menu(createStandardContextMenu(pos));
+    menu->addSeparator();
+    // The shortcut is only displayed (text after a tab): the main menu's action owns it.
+    const auto label = [](const QString &text, const QKeySequence &shortcut) {
+        return text + u'\t' + shortcut.toString(QKeySequence::NativeText);
+    };
+    // No mnemonics: P and D belong to the standard Paste and Delete entries.
+    menu->addAction(label(tr("Prettify"), prettifyShortcut()), this, [this] { formatAtCursor(); });
+    menu->addAction(label(tr("Prettify Document"), prettifyDocumentShortcut()), this, [this] { formatDocument(); });
+    menu->exec(event->globalPos());
 }
 
 void MarkdownEditor::mouseMoveEvent(QMouseEvent *event)
@@ -1124,6 +1162,71 @@ QString MarkdownEditor::documentLanguage() const
     return FormatterRegistry::instance().languageForSuffix(suffix);
 }
 
+namespace {
+
+// Where a caret goes when `before` is reformatted into `after`. Formatters mostly change whitespace,
+// so the caret is located by how many other characters precede it.
+int mapAcrossWhitespace(const QString &before, const QString &after, int offset)
+{
+    offset = std::clamp(offset, 0, int(before.size()));
+    int preceding = 0;
+    for (int i = 0; i < offset; ++i)
+        preceding += before[i].isSpace() ? 0 : 1;
+
+    // In front of text, or in a line's indentation, the caret belongs to what follows it.
+    int next = offset;
+    while (next < before.size() && before[next].isSpace() && before[next] != u'\n')
+        ++next;
+    int lineStart = offset;
+    while (lineStart > 0 && before[lineStart - 1].isSpace() && before[lineStart - 1] != u'\n')
+        --lineStart;
+    const bool atLineStart = lineStart == 0 || before[lineStart - 1] == u'\n';
+    const bool followsNext = next < before.size() && before[next] != u'\n' && (next == offset || atLineStart);
+
+    int seen = 0;
+    for (int i = 0; i < after.size(); ++i) {
+        if (after[i].isSpace())
+            continue;
+        if (followsNext && seen == preceding)
+            return i;
+        ++seen;
+        if (!followsNext && seen == preceding)
+            return i + 1;
+    }
+    return preceding == 0 ? 0 : int(after.size());
+}
+
+// Where a caret at `column` of `before` goes in `after`, the same table row reformatted: the same
+// cell, at the same place in its content.
+int mapAcrossTableRow(const QString &before, const QString &after, int column)
+{
+    const md::TableRow oldRow = md::splitTableRow(toView(before));
+    const md::TableRow newRow = md::splitTableRow(toView(after));
+    if (oldRow.cells.empty() || newRow.cells.empty())
+        return std::min(column, int(after.size()));
+
+    int index = 0;
+    while (index + 1 < int(oldRow.cells.size()) && column > oldRow.cells[index].segmentEnd)
+        ++index;
+    const md::TableCell &oldCell = oldRow.cells[index];
+    const md::TableCell &newCell = newRow.cells[std::min(index, int(newRow.cells.size()) - 1)];
+    const int inContent = std::clamp(column - oldCell.start, 0, oldCell.end - oldCell.start);
+    return newCell.start + std::min(inContent, newCell.end - newCell.start);
+}
+
+} // namespace
+
+// Replacing text collapses a cursor inside it to the end of the new text: put it back where it was.
+void MarkdownEditor::restoreCursor(QTextCursor cursor, int anchor, int position)
+{
+    cursor.setPosition(anchor);
+    cursor.setPosition(position, QTextCursor::KeepAnchor);
+    if (m_batchCursor)
+        *m_batchCursor = cursor; // the layout is out of date until the edit block ends
+    else
+        setTextCursor(cursor);
+}
+
 bool MarkdownEditor::formatRange(int start, int end, const QString &language, QString *message)
 {
     QTextCursor cursor(document());
@@ -1134,12 +1237,21 @@ bool MarkdownEditor::formatRange(int start, int end, const QString &language, QS
 
     const FormatterRegistry::Outcome outcome = FormatterRegistry::instance().format(language, text);
     if (!outcome.ok) {
-        *message = tr("Cannot format %1: %2").arg(language, outcome.error);
+        *message = tr("Cannot prettify %1: %2").arg(language, outcome.error);
         return false;
     }
-    if (outcome.text != text)
+    if (outcome.text != text) {
+        QTextCursor caret = m_batchCursor ? *m_batchCursor : textCursor();
+        const int anchor = caret.anchor();
+        const int position = caret.position();
+        const bool inside = anchor >= start && anchor <= end && position >= start && position <= end;
         cursor.insertText(outcome.text);
-    *message = tr("Formatted %1 (%2)").arg(language, outcome.formatter);
+        if (inside) {
+            restoreCursor(caret, start + mapAcrossWhitespace(text, outcome.text, anchor - start),
+                          start + mapAcrossWhitespace(text, outcome.text, position - start));
+        }
+    }
+    *message = tr("Prettified %1 (%2)").arg(language, outcome.formatter);
     return true;
 }
 
@@ -1156,12 +1268,37 @@ bool MarkdownEditor::formatTable(const QTextBlock &header, QString *message)
     for (const std::u16string &line : fmt::formatTable(lines))
         formatted << QString::fromStdU16String(line);
 
+    const int start = header.position();
+    const int end = last.position() + last.length() - 1;
+    const int firstLine = header.blockNumber(); // `header` doesn't survive the replacement
     QTextCursor cursor(document());
-    cursor.setPosition(header.position());
-    cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    cursor.setPosition(start);
+    cursor.setPosition(end, QTextCursor::KeepAnchor);
     const QString replacement = formatted.join(u'\n');
-    if (cursor.selectedText().replace(QChar::ParagraphSeparator, u'\n') != replacement)
+    if (cursor.selectedText().replace(QChar::ParagraphSeparator, u'\n') != replacement) {
+        QTextCursor caret = m_batchCursor ? *m_batchCursor : textCursor();
+        const bool inside = caret.anchor() >= start && caret.anchor() <= end && caret.position() >= start
+            && caret.position() <= end;
+
+        // Rows keep their order and number, so a caret is a (line, column) that maps row by row.
+        const auto locate = [&](int position) {
+            const QTextBlock block = document()->findBlock(position);
+            return std::pair(block.blockNumber() - firstLine, position - block.position());
+        };
+        const auto [anchorLine, anchorColumn] = inside ? locate(caret.anchor()) : std::pair(0, 0);
+        const auto [positionLine, positionColumn] = inside ? locate(caret.position()) : std::pair(0, 0);
+
         cursor.insertText(replacement);
+
+        if (inside) {
+            const auto mapped = [&](int line, int column) {
+                const QTextBlock block = document()->findBlockByNumber(firstLine + line);
+                return block.position()
+                    + mapAcrossTableRow(QString::fromStdU16String(lines[line]), block.text(), column);
+            };
+            restoreCursor(caret, mapped(anchorLine, anchorColumn), mapped(positionLine, positionColumn));
+        }
+    }
     *message = tr("Table aligned");
     return true;
 }
@@ -1199,7 +1336,7 @@ void MarkdownEditor::formatAtCursor()
         formatDocument();
         return;
     } else {
-        message = tr("Nothing to format here: select code, or put the cursor in a code block or table");
+        message = tr("Nothing to prettify here: select code, or put the cursor in a code block or table");
     }
     emit statusMessage(message);
 }
@@ -1234,6 +1371,7 @@ int MarkdownEditor::formatDocument(bool quiet)
     int formatted = 0;
     QString firstError;
     QTextCursor group(document());
+    m_batchCursor = textCursor(); // tracks edits, and each target may move it
     group.beginEditBlock(); // one undo step for the whole document
     for (auto it = targets.rbegin(); it != targets.rend(); ++it) {
         const QTextBlock block = document()->findBlockByNumber(it->block);
@@ -1250,10 +1388,15 @@ int MarkdownEditor::formatDocument(bool quiet)
         }
     }
     group.endEditBlock();
+    const QTextCursor caret = *m_batchCursor;
+    m_batchCursor.reset();
+    if (caret.anchor() != textCursor().anchor() || caret.position() != textCursor().position())
+        setTextCursor(caret);
+    refreshActiveBlock(); // lines above the cursor may have changed its block number
 
     if (!quiet) {
-        message = firstError.isEmpty() ? tr("Formatted %n block(s)", nullptr, formatted)
-                                       : tr("Formatted %n block(s); %1", nullptr, formatted).arg(firstError);
+        message = firstError.isEmpty() ? tr("Prettified %n block(s)", nullptr, formatted)
+                                       : tr("Prettified %n block(s); %1", nullptr, formatted).arg(firstError);
         emit statusMessage(message);
     }
     return formatted;

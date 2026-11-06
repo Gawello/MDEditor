@@ -108,6 +108,9 @@ QTextCharFormat LivePreviewHighlighter::collapsed(QTextCharFormat format) const
     format.setFontPointSize(0.1);
     format.setFontLetterSpacingType(QFont::AbsoluteSpacing);
     format.setFontLetterSpacing(0);
+    // 0.1pt rounds to 0 px, which fontconfig can resolve to a bitmap emoji font. Without this, every
+    // glyph that font lacks searches all system fonts: many seconds on a machine with many fonts.
+    format.setFontStyleStrategy(QFont::NoFontMerging);
     return format;
 }
 

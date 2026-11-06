@@ -148,9 +148,9 @@ void MainWindow::createMenus()
         format->addAction(wrap.name, wrap.shortcut, this, [this, marker] { currentEditor()->toggleWrap(marker); });
     }
     format->addSeparator();
-    format->addAction(tr("&Format"), QKeySequence(Qt::SHIFT | Qt::ALT | Qt::Key_F), this,
+    format->addAction(tr("&Prettify"), MarkdownEditor::prettifyShortcut(), this,
                       [this] { currentEditor()->formatAtCursor(); });
-    format->addAction(tr("Format &Document"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::ALT | Qt::Key_F), this,
+    format->addAction(tr("Prettify &Document"), MarkdownEditor::prettifyDocumentShortcut(), this,
                       [this] { currentEditor()->formatDocument(); });
     format->addSeparator();
     format->addAction(tr("Insert &Table…"), this, [this] {
@@ -238,7 +238,7 @@ void MainWindow::showTablePicker(const QPoint &globalPos, bool alignRight)
     auto *picker = new TablePicker(this);
     connect(picker, &TablePicker::picked, this, [this](int rows, int columns) {
         currentEditor()->insertTable(rows, columns);
-    });
+    }, Qt::QueuedConnection); // back in the event loop, so the popup's X11 grab has been released
     picker->popup(alignRight ? globalPos - QPoint(picker->width(), 0) : globalPos);
 }
 

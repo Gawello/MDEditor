@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QImage>
+#include <QKeySequence>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QTextBlock>
@@ -47,6 +48,8 @@ public:
     // Formats every code block with a known language and every table (or a whole non-Markdown file).
     // Returns the number of formatted blocks; with `quiet`, no status message is emitted.
     int formatDocument(bool quiet = false);
+    static QKeySequence prettifyShortcut();
+    static QKeySequence prettifyDocumentShortcut();
 
 signals:
     void openFileRequested(const QString &path);
@@ -57,6 +60,7 @@ protected:
     bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -96,6 +100,7 @@ private:
     QString documentLanguage() const; // language of a non-Markdown file, from its suffix
     bool formatRange(int start, int end, const QString &language, QString *message);
     bool formatTable(const QTextBlock &header, QString *message);
+    void restoreCursor(QTextCursor cursor, int anchor, int position);
     void applyTheme();
     void applyFontSettings();
     void refreshActiveBlock();
@@ -130,5 +135,6 @@ private:
     mutable QHash<QString, CachedImage> m_images; // by absolute path
     mutable bool m_hasImages = false;              // re-layout images when the width changes
     int m_layoutWidth = 0;
+    std::optional<QTextCursor> m_batchCursor; // set while formatDocument edits
     QTimer *m_imageRelayout = nullptr;
 };

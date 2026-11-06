@@ -97,9 +97,11 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
 - `ThemeManager::apply`: non-system themes switch the app to the **Fusion** style + `QApplication::setPalette`
   (native Windows styles ignore custom palettes); System restores the platform style and `setPalette(QPalette())`.
   `EditorTheme::fromPalette` takes accent/code/highlight colors from the current theme.
-- Formatting entry points: `MarkdownEditor::formatAtCursor` (selection → fenced block → table → whole non-Markdown
-  file) and `formatDocument` (all code blocks + tables, bottom-up, one undo step). Messages go to the status bar
-  via `MarkdownEditor::statusMessage`.
+- Formatting entry points (shown to the user as Prettify, in the Format and right-click menus):
+  `MarkdownEditor::formatAtCursor` (selection → fenced block → table → whole non-Markdown file) and `formatDocument`
+  (all code blocks + tables, bottom-up, one undo step). Messages go to the status bar via
+  `MarkdownEditor::statusMessage`. They keep the cursor in place: table cursors map cell by cell, code cursors by
+  non-whitespace characters. Inside `formatDocument` the cursor is set only after the edit block (`m_batchCursor`).
 - Plugins: `<AppData>/plugins/<id>/manifest.json + main.js`, disabled until enabled in Settings. Every call into
   JS goes through `PluginManager::guarded` (watchdog thread → `QJSEngine::setInterrupted`). Events are fired from
   `EditorTab::load/save`. Keep `docs/plugins.md` in sync when the API changes.
@@ -156,6 +158,11 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
   `QJSValue` members, so it is destroyed after them).
 - `QSyntaxHighlighter` format changes emit `contentsChange` too. Don't drive re-highlighting from that signal
   (it can loop); use the highlighter itself (see `recheckPreviousBlock`).
+- `collapsed()` (0.1pt) rounds to 0 px, which fontconfig can resolve to a bitmap font such as Noto Color Emoji.
+  Without `QFont::NoFontMerging`, each glyph missing there walks all system fonts (17 s on the first table with
+  2300 fonts). `*` and `#` hide the bug: the emoji font has them.
+- A `Qt::Popup` on X11 grabs the mouse and keyboard of the whole desktop: close it before doing work, and return to
+  the event loop first (`TablePicker::choose` + queued `picked`), or a slow call freezes every application.
 
 ## Conventions
 

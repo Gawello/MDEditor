@@ -340,11 +340,11 @@ QWidget *SettingsDialog::createFormattingPage()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
     layout->addWidget(heading(tr("Formatting")));
-    layout->addWidget(hint(tr("Format (Shift+Alt+F) works on the selection, the code block or table under the "
-                              "cursor; Format Document handles every code block and table. Indentation comes "
+    layout->addWidget(hint(tr("Prettify (Shift+Alt+F) works on the selection, the code block or table under the "
+                              "cursor; Prettify Document handles every code block and table. Indentation comes "
                               "from the Editor page.")));
 
-    auto *onSave = new QCheckBox(tr("Format the document when saving"), page);
+    auto *onSave = new QCheckBox(tr("Prettify the document when saving"), page);
     onSave->setChecked(AppSettings::instance().formatOnSave());
     connect(onSave, &QCheckBox::toggled, this,
             [](bool checked) { AppSettings::instance().setValue(AppSettings::formatOnSaveKey, checked); });
