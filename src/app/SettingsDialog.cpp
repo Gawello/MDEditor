@@ -1,5 +1,7 @@
 #include "app/SettingsDialog.h"
 
+#include "app/CloudDrivePage.h"
+
 #include "app/AppSettings.h"
 #include "format/FormatterRegistry.h"
 #include "plugins/PluginManager.h"
@@ -68,7 +70,7 @@ QLabel *hint(const QString &text)
 
 } // namespace
 
-SettingsDialog::SettingsDialog(QWidget *parent)
+SettingsDialog::SettingsDialog(CloudDrive *drive, QWidget *parent)
     : QDialog(parent)
     , m_sections(new QListWidget(this))
     , m_pages(new QStackedWidget(this))
@@ -85,6 +87,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     addPage(tr("Appearance"), createAppearancePage());
     addPage(tr("Editor"), createEditorPage());
     addPage(tr("Formatting"), createFormattingPage());
+    addPage(tr("Google Drive"), new CloudDrivePage(drive));
     addPage(tr("Plugins"), createPluginsPage());
     m_sections->setCurrentRow(0);
 

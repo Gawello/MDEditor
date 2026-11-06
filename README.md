@@ -30,6 +30,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   formatting and plugins
 - Themes for the whole app: System, Light, Dark, Obsidian, Solarized Light/Dark, Nord, Dracula, plus your own
   JSON themes ([docs/themes.md](docs/themes.md))
+- Warns before overwriting a file changed elsewhere, and keeps working on slow [network drives](docs/network-drives.md)
+- Connect a Google Drive folder from the app (File → Google Drive…), remembered across restarts and updates
 - Prettify (Shift+Alt+F) and Prettify Document (Ctrl+Shift+Alt+F), in the Format menu and the right-click menu: JSON (key order kept),
   XML/HTML, CSS, C/C++/Java/JavaScript/C#/Go (re-indent), Python (indentation), and Markdown table alignment
   (columns line up in the raw file in a monospace font, including CJK, emoji and combining marks).

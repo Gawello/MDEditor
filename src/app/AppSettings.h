@@ -20,6 +20,11 @@ public:
     static constexpr auto attachmentsFolderKey = "editor/attachmentsFolder";
     static constexpr auto formatOnSaveKey = "format/onSave";
     static constexpr auto enabledPluginsKey = "plugins/enabled";
+    static constexpr auto driveFolderKey = "drive/folder";
+    static constexpr auto driveMountPointKey = "drive/mountPoint";
+    static constexpr auto driveConnectOnStartKey = "drive/connectOnStart";
+    static constexpr auto driveRclonePathKey = "drive/rclonePath"; // empty: rclone from PATH
+    static constexpr auto driveMountPidKey = "drive/mountPid";
 
     QString theme() const { return value(themeKey, QStringLiteral("system")).toString(); }
     QString fontFamily() const { return value(fontFamilyKey).toString(); } // empty: system default

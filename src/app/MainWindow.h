@@ -9,6 +9,7 @@ class QMenu;
 class QSplitter;
 class QTabWidget;
 class QToolButton;
+class CloudDrive;
 class SettingsDialog;
 
 class MainWindow : public QMainWindow {
@@ -44,12 +45,14 @@ private:
     void openFiles(const QStringList &paths);
     bool save(EditorTab *tab);
     bool saveAs(EditorTab *tab);
-    bool saveTo(EditorTab *tab, const QString &path);
+    bool saveTo(EditorTab *tab, const QString &path, bool overwrite = false);
+    bool resolveConflict(EditorTab *tab, const QString &path);
     bool maybeSave(EditorTab *tab);
     void updateTabTitle(EditorTab *tab);
     void updateWindowTitle();
     void populateRecentMenu();
     void showTablePicker(const QPoint &globalPos, bool alignRight);
+    void openPendingDriveItems();
     QIcon tableIcon() const;
     QString dialogDirectory() const;
     void about();
@@ -63,4 +66,9 @@ private:
     QMenu *m_pluginsMenu = nullptr;
     QToolButton *m_tableButton = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
+    CloudDrive *m_cloudDrive;
+    // Session items on Google Drive, waiting for the mount.
+    QString m_pendingFolder;
+    QStringList m_pendingFiles;
+    QString m_pendingCurrent;
 };

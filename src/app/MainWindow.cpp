@@ -3,6 +3,7 @@
 #include "app/EditorTab.h"
 #include "app/FindBar.h"
 #include "app/RecentFiles.h"
+#include "app/CloudDrive.h"
 #include "app/SettingsDialog.h"
 #include "app/TabCloseButton.h"
 #include "app/TablePicker.h"
@@ -21,6 +22,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
+#include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
 #include <QStandardPaths>
@@ -28,6 +30,8 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolButton>
+
+#include <utility>
 
 namespace {
 
@@ -78,8 +82,26 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderPanel, &FolderPanel::fileActivated, this, &MainWindow::openFile);
     connect(m_folderPanel, &FolderPanel::openFolderRequested, this, &MainWindow::openFolderDialog);
 
+    m_cloudDrive = new CloudDrive(this);
+    connect(m_cloudDrive, &CloudDrive::connected, this, [this](const QString &path, bool automatic) {
+        statusBar()->showMessage(tr("Google Drive connected"), 8000);
+        openPendingDriveItems();
+        if (!automatic)
+            openFolder(path);
+    });
+    connect(m_cloudDrive, &CloudDrive::failed, this,
+            [this](const QString &message) { statusBar()->showMessage(message, 15000); });
+
     createMenus();
     statusBar()->setSizeGripEnabled(false);
+    // Coming back to the window is when changes made elsewhere matter. No file watcher: they are
+    // unreliable on network drives, and a watcher's stat calls could hang on a disconnected one.
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state != Qt::ApplicationActive)
+            return;
+        for (int i = 0; i < m_tabs->count(); ++i)
+            tabAt(i)->checkDisk();
+    });
     addTab();
 
     PluginManager &plugins = PluginManager::instance();
@@ -109,6 +131,7 @@ void MainWindow::createMenus()
     file->addAction(tr("Save &As…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), this,
                     [this] { saveAs(currentTab()); });
     file->addSeparator();
+    file->addAction(tr("&Google Drive…"), this, [this] { showSettings(QStringLiteral("Google Drive")); });
     file->addAction(tr("Se&ttings…"), QKeySequence(Qt::CTRL | Qt::Key_Comma), this, [this] { showSettings(); });
     file->addSeparator();
     file->addAction(tr("&Close Tab"), QKeySequence(Qt::CTRL | Qt::Key_W), this,
@@ -275,22 +298,45 @@ void MainWindow::restoreSession(const QStringList &files)
 {
     QSettings settings;
     const QString folder = settings.value("session/folder").toString();
-    if (!folder.isEmpty() && QFileInfo(folder).isDir())
+    // The mount may not be up yet: such items wait for it instead of looking like deleted files. Even
+    // checking them here could hang on a mount left behind by a lost connection.
+    if (!folder.isEmpty() && m_cloudDrive->contains(folder))
+        m_pendingFolder = folder;
+    else if (!folder.isEmpty() && QFileInfo(folder).isDir())
         openFolder(folder);
 
     if (!files.isEmpty()) {
         for (const QString &path : files)
             openFile(path);
+        m_cloudDrive->start();
         return;
     }
 
     const QStringList previous = settings.value("session/files").toStringList();
     const QString current = settings.value("session/current").toString();
     for (const QString &path : previous) {
+        if (m_cloudDrive->contains(path))
+            m_pendingFiles << path;
+        else if (QFileInfo::exists(path))
+            openFile(path);
+    }
+    m_pendingCurrent = current;
+    const int index = findTab(current);
+    if (index >= 0)
+        m_tabs->setCurrentIndex(index);
+    m_cloudDrive->start();
+}
+
+void MainWindow::openPendingDriveItems()
+{
+    if (!m_pendingFolder.isEmpty())
+        openFolder(std::exchange(m_pendingFolder, QString()));
+    const QStringList files = std::exchange(m_pendingFiles, QStringList());
+    for (const QString &path : files) {
         if (QFileInfo::exists(path))
             openFile(path);
     }
-    const int index = findTab(current);
+    const int index = findTab(m_pendingCurrent);
     if (index >= 0)
         m_tabs->setCurrentIndex(index);
 }
@@ -347,6 +393,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         if (!tabAt(i)->isUntitled())
             files << tabAt(i)->filePath();
     }
+    files << m_pendingFiles; // the drive didn't connect this time: keep them for the next one
 
     QSettings settings;
     settings.setValue("window/geometry", saveGeometry());
@@ -354,7 +401,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     settings.setValue("window/folderPanel", m_folderPanel->isVisible());
     settings.setValue("session/files", files);
     settings.setValue("session/current", currentTab()->filePath());
-    settings.setValue("session/folder", m_folderPanel->rootPath());
+    settings.setValue("session/folder", m_pendingFolder.isEmpty() ? m_folderPanel->rootPath() : m_pendingFolder);
     event->accept();
 }
 
@@ -429,6 +476,8 @@ EditorTab *MainWindow::addTab()
     connect(tab->editor(), &MarkdownEditor::filesDropped, this, &MainWindow::openFiles);
     connect(tab->editor(), &MarkdownEditor::statusMessage, this,
             [this](const QString &message) { statusBar()->showMessage(message, 8000); });
+    connect(tab, &EditorTab::statusMessage, this,
+            [this](const QString &message) { statusBar()->showMessage(message, 8000); });
 
     const int index = m_tabs->addTab(tab, QString());
     auto *closeButton = new TabCloseButton(m_tabs->tabBar());
@@ -500,10 +549,13 @@ bool MainWindow::saveAs(EditorTab *tab)
     return saveTo(tab, path);
 }
 
-bool MainWindow::saveTo(EditorTab *tab, const QString &path)
+bool MainWindow::saveTo(EditorTab *tab, const QString &path, bool overwrite)
 {
     QString error;
-    if (!tab->save(path, error)) {
+    const EditorTab::SaveResult result = tab->save(path, error, overwrite);
+    if (result == EditorTab::SaveResult::Conflict)
+        return resolveConflict(tab, path);
+    if (result == EditorTab::SaveResult::Failed) {
         QMessageBox::warning(this, tr("Save File"),
                              tr("Cannot save %1:\n%2").arg(QDir::toNativeSeparators(path), error));
         return false;
@@ -511,6 +563,37 @@ bool MainWindow::saveTo(EditorTab *tab, const QString &path)
     RecentFiles::add(tab->filePath());
     m_folderPanel->selectFile(tab->filePath());
     return true;
+}
+
+bool MainWindow::resolveConflict(EditorTab *tab, const QString &path)
+{
+    m_tabs->setCurrentWidget(tab);
+    const bool missing = tab->conflictState() == DiskState::Missing;
+
+    QMessageBox box(QMessageBox::Warning, tr("File Changed on Disk"),
+                    missing ? tr("%1 is no longer available. It may have been deleted or moved, or its drive may be "
+                                 "disconnected.").arg(tab->displayName())
+                            : tr("%1 was changed outside MDEditor since you opened it. Saving now replaces those "
+                                 "changes.").arg(tab->displayName()),
+                    QMessageBox::Cancel, this);
+    QPushButton *overwrite = box.addButton(missing ? tr("Save Anyway") : tr("Overwrite"), QMessageBox::DestructiveRole);
+    QPushButton *saveCopy = box.addButton(tr("Save As…"), QMessageBox::ActionRole);
+    QPushButton *reload = missing ? nullptr : box.addButton(tr("Discard Mine and Reload"), QMessageBox::ActionRole);
+    box.setDefaultButton(saveCopy);
+    box.exec();
+
+    if (box.clickedButton() == overwrite)
+        return saveTo(tab, path, true);
+    if (box.clickedButton() == saveCopy)
+        return saveAs(tab);
+    if (reload && box.clickedButton() == reload) {
+        QString error;
+        if (tab->reload(error))
+            return true;
+        QMessageBox::warning(this, tr("Reload File"),
+                             tr("Cannot reload %1:\n%2").arg(QDir::toNativeSeparators(path), error));
+    }
+    return false;
 }
 
 bool MainWindow::maybeSave(EditorTab *tab)
@@ -585,7 +668,7 @@ QString MainWindow::dialogDirectory() const
 void MainWindow::showSettings(const QString &page)
 {
     if (!m_settingsDialog)
-        m_settingsDialog = new SettingsDialog(this);
+        m_settingsDialog = new SettingsDialog(m_cloudDrive, this);
     if (!page.isEmpty())
         m_settingsDialog->showPage(page);
     m_settingsDialog->show();

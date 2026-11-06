@@ -7,11 +7,13 @@ class QStackedWidget;
 
 // Obsidian-style settings: a list of sections on the left, the selected page on the right.
 // Every control writes straight to AppSettings, so changes apply live.
+class CloudDrive;
+
 class SettingsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit SettingsDialog(QWidget *parent = nullptr);
+    explicit SettingsDialog(CloudDrive *drive, QWidget *parent = nullptr);
 
     void showPage(const QString &title);
 

@@ -82,10 +82,12 @@ src/format/
   FormatterRegistry       language aliases; plugin formatter > external tool (QProcess) > built-in; XML via Qt
 src/theme/              Theme (palette + Markdown colors, JSON), ThemeManager (presets, user/plugin themes)
 src/plugins/            PluginManager (discovery, QJSEngine per plugin, 3 s watchdog), PluginApi (`app`, `editor`)
-src/document/Document   load/save with encoding details
+src/document/Document   read/write/check with encoding details (static, off the GUI thread), FileStamp
 src/panels/FolderPanel  QFileSystemModel tree (no icons, .md suffix hidden)
 src/app/                MainWindow (tabs, menus, status bar, session), EditorTab (editor + FindBar),
                         FindBar (find/replace, highlights via extraSelections), AppSettings, SettingsDialog,
+                        Background (runInBackground, runAndWait), ExternalChangeBar, CloudDrive (rclone),
+                        CloudDrivePage,
                         RecentFiles, TabCloseButton, TablePicker
 docs/                   plugins.md (plugin API), themes.md (theme JSON); examples/plugins/ = sample plugins
 ```
@@ -105,6 +107,31 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
 - Plugins: `<AppData>/plugins/<id>/manifest.json + main.js`, disabled until enabled in Settings. Every call into
   JS goes through `PluginManager::guarded` (watchdog thread → `QJSEngine::setInterrupted`). Events are fired from
   `EditorTab::load/save`. Keep `docs/plugins.md` in sync when the API changes.
+
+### Files on slow disks and changes made elsewhere
+
+- Disk access for documents never runs on the GUI thread. `EditorTab::load/save/reload` stay synchronous for
+  their callers but wait in `waitWithProgress`: a nested loop that holds back input, then a modal "Stop Waiting"
+  dialog after 300 ms. Workers are detached `std::thread`s, not the thread pool: a hung drive never returns, so
+  their lambdas capture values only and may outlive the tab.
+- `FileStamp` (size, date, SHA-256) records the last version read or written. `Document::check` reads the file
+  only if size or date differ. A save that finds a change returns `SaveResult::Conflict` before the format and
+  plugin hooks, and `MainWindow::resolveConflict` asks. `EditorTab::checkDisk` runs when the app becomes active:
+  unmodified tabs reload, modified ones show `ExternalChangeBar`. There is deliberately no QFileSystemWatcher.
+- Still synchronous: images and pasted images in `MarkdownEditor`, and `QFileInfo` calls in `MainWindow`.
+
+### Google Drive
+
+- `CloudDrive` drives rclone with QProcess. rclone owns login and token (`~/.config/rclone/rclone.conf`); AppSettings
+  `drive/*` keys hold the folders. Both are in the user's profile, so they survive updates.
+- Signed-in means `rclone config dump` has a token for `mdeditor-gdrive`, not `listremotes`: an abandoned login leaves
+  a remote without a token (`cancelSignIn` deletes it).
+- The mount is detached (`QProcess::startDetached`, no `--daemon`, which Windows lacks) and outlives the app, so a
+  pending upload isn't cut off; `start()` finds it still mounted. Mounted means `QStorageInfo` type `fuse.rclone` and
+  a readable folder (a killed rclone leaves a dead mount, cleared before reconnecting), probed off the GUI thread. `MainWindow::restoreSession` holds back session items on the drive until `connected`,
+  and keeps them for the next session if it never comes.
+- `tests/test_cloud_drive.cpp` uses a fake rclone shell script. Google sign-in itself can't be automated. Windows
+  paths (`taskkill`, mount folder must not exist) are untested.
 
 ### How live preview works
 
@@ -156,6 +183,7 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON); example
 - Plugin `QJSEngine`s must be destroyed before `QApplication` (`PluginManager::shutdown()` in `main`), and a
   `QJSValue` must not outlive its engine (in `PluginManager::Plugin` the engine is declared before the
   `QJSValue` members, so it is destroyed after them).
+- `QTextBlock`s in a replaced range are invalid afterwards (`blockNumber()` is wrong): save numbers before `insertText`.
 - `QSyntaxHighlighter` format changes emit `contentsChange` too. Don't drive re-highlighting from that signal
   (it can loop); use the highlighter itself (see `recheckPreviousBlock`).
 - `collapsed()` (0.1pt) rounds to 0 px, which fontconfig can resolve to a bitmap font such as Noto Color Emoji.
