@@ -32,6 +32,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   formatting and plugins
 - Themes for the whole app: System, Light, Dark, Obsidian, Solarized Light/Dark, Nord, Dracula, plus your own
   JSON themes ([docs/themes.md](docs/themes.md))
+- Sidebar with favorite folders, the vault and the folder you're browsing, in one view
 - Warns before overwriting a file changed elsewhere, and keeps working on slow [network drives](docs/network-drives.md)
 - Connect a Google Drive folder from the app (File → Google Drive…), remembered across restarts and updates
 - HTML entities such as `&rarr;` and `&#8594;` shown as their characters, in tables too

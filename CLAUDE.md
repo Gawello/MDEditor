@@ -85,7 +85,8 @@ src/format/
 src/theme/              Theme (palette + Markdown colors, JSON), ThemeManager (presets, user/plugin themes)
 src/plugins/            PluginManager (discovery, QJSEngine per plugin, 3 s watchdog), PluginApi (`app`, `editor`)
 src/document/Document   read/write/check with encoding details (static, off the GUI thread), FileStamp
-src/panels/FolderPanel  QFileSystemModel tree (no icons, .md suffix hidden)
+src/panels/             Sidebar (collapsible sections in one view): FavoritesPanel, and FolderPanel twice, for the
+                        vault and for browsing (QFileSystemModel tree, no icons, .md suffix hidden)
 src/app/                MainWindow (tabs, menus, status bar, session), EditorTab (editor + FindBar),
                         FindBar (find/replace, highlights via extraSelections), AppSettings, SettingsDialog,
                         Background (runInBackground, runAndWait), ExternalChangeBar, CloudDrive (rclone),

@@ -20,6 +20,12 @@ public:
     static constexpr auto attachmentsFolderKey = "editor/attachmentsFolder";
     static constexpr auto formatOnSaveKey = "format/onSave";
     static constexpr auto enabledPluginsKey = "plugins/enabled";
+    static constexpr auto vaultPathKey = "vault/path"; // empty: plain editor
+    static constexpr auto favoritesKey = "sidebar/favorites";
+    static constexpr auto sidebarSplitterKey = "sidebar/splitter";
+    static constexpr auto sidebarFavoritesOpenKey = "sidebar/favoritesOpen";
+    static constexpr auto sidebarVaultOpenKey = "sidebar/vaultOpen";
+    static constexpr auto sidebarFilesOpenKey = "sidebar/filesOpen";
     static constexpr auto driveFolderKey = "drive/folder";
     static constexpr auto driveMountPointKey = "drive/mountPoint";
     static constexpr auto driveConnectOnStartKey = "drive/connectOnStart";

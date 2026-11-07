@@ -3,7 +3,6 @@
 #include <QMainWindow>
 
 class EditorTab;
-class FolderPanel;
 class MarkdownEditor;
 class QMenu;
 class QSplitter;
@@ -11,6 +10,7 @@ class QTabWidget;
 class QToolButton;
 class CloudDrive;
 class SettingsDialog;
+class Sidebar;
 class SymbolPicker;
 
 class MainWindow : public QMainWindow {
@@ -23,6 +23,8 @@ public:
     void restoreSession(const QStringList &files);
     bool openFile(const QString &path);
     void openFolder(const QString &path);
+    // An empty path closes the vault.
+    void openVault(const QString &path);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -43,6 +45,7 @@ private:
     void newFile();
     void openFileDialog();
     void openFolderDialog();
+    void openVaultDialog();
     void openFiles(const QStringList &paths);
     bool save(EditorTab *tab);
     bool saveAs(EditorTab *tab);
@@ -63,7 +66,7 @@ private:
     void populatePluginsMenu();
 
     QTabWidget *m_tabs;
-    FolderPanel *m_folderPanel;
+    Sidebar *m_sidebar;
     QSplitter *m_splitter;
     QMenu *m_recentMenu = nullptr;
     QMenu *m_pluginsMenu = nullptr;

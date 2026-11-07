@@ -49,7 +49,9 @@ if(MDEDITOR_BUILD_APP)
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
         src/editor/MarkdownEditor.cpp src/editor/MarkdownEditor.h
         src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
+        src/panels/FavoritesPanel.cpp src/panels/FavoritesPanel.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
+        src/panels/Sidebar.cpp src/panels/Sidebar.h
         src/plugins/PluginApi.cpp src/plugins/PluginApi.h
         src/plugins/PluginManager.cpp src/plugins/PluginManager.h
         src/theme/Theme.cpp src/theme/Theme.h

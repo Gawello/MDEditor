@@ -3,6 +3,7 @@
 #include "app/EditorTab.h"
 #include "app/FindBar.h"
 #include "app/RecentFiles.h"
+#include "app/AppSettings.h"
 #include "app/CloudDrive.h"
 #include "app/SettingsDialog.h"
 #include "app/SymbolPicker.h"
@@ -10,7 +11,7 @@
 #include "app/TablePicker.h"
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
-#include "panels/FolderPanel.h"
+#include "panels/Sidebar.h"
 #include "plugins/PluginManager.h"
 
 #include <QAction>
@@ -44,7 +45,7 @@ const QString fileFilter = QStringLiteral("Markdown (*.md *.markdown);;Text (*.t
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_tabs(new QTabWidget(this))
-    , m_folderPanel(new FolderPanel(this))
+    , m_sidebar(new Sidebar(this))
     , m_splitter(new QSplitter(Qt::Horizontal, this))
 {
     m_tabs->setDocumentMode(true);
@@ -76,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
     applyStyle();
 
-    m_splitter->addWidget(m_folderPanel);
+    m_splitter->addWidget(m_sidebar);
     m_splitter->addWidget(m_tabs);
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -89,12 +90,16 @@ MainWindow::MainWindow(QWidget *parent)
         updateWindowTitle();
         if (EditorTab *tab = currentTab()) {
             if (!tab->isUntitled())
-                m_folderPanel->selectFile(tab->filePath());
+                m_sidebar->selectFile(tab->filePath());
             tab->setFocus();
         }
     });
-    connect(m_folderPanel, &FolderPanel::fileActivated, this, &MainWindow::openFile);
-    connect(m_folderPanel, &FolderPanel::openFolderRequested, this, &MainWindow::openFolderDialog);
+    connect(m_sidebar, &Sidebar::fileActivated, this, &MainWindow::openFile);
+    connect(m_sidebar, &Sidebar::openFolderRequested, this, &MainWindow::openFolderDialog);
+    connect(m_sidebar, &Sidebar::openVaultRequested, this, &MainWindow::openVaultDialog);
+    m_sidebar->setVaultRoot(AppSettings::instance().value(AppSettings::vaultPathKey).toString());
+    connect(m_sidebar, &Sidebar::statusMessage, this,
+            [this](const QString &message) { statusBar()->showMessage(message, 8000); });
 
     m_cloudDrive = new CloudDrive(this);
     connect(m_cloudDrive, &CloudDrive::connected, this, [this](const QString &path, bool automatic) {
@@ -128,7 +133,8 @@ MainWindow::MainWindow(QWidget *parent)
     if (!restoreGeometry(settings.value("window/geometry").toByteArray()))
         resize(1100, 750);
     m_splitter->restoreState(settings.value("window/splitter").toByteArray());
-    m_folderPanel->setVisible(settings.value("window/folderPanel", true).toBool());
+    m_sidebar->setVisible(settings.value("window/folderPanel", true).toBool());
+    m_sidebar->restoreLayout();
 }
 
 void MainWindow::createMenus()
@@ -145,6 +151,8 @@ void MainWindow::createMenus()
     file->addAction(tr("Save &As…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), this,
                     [this] { saveAs(currentTab()); });
     file->addSeparator();
+    file->addAction(tr("Open &Vault…"), this, &MainWindow::openVaultDialog);
+    file->addAction(tr("Clos&e Vault"), this, [this] { openVault(QString()); });
     file->addAction(tr("&Google Drive…"), this, [this] { showSettings(QStringLiteral("Google Drive")); });
     file->addAction(tr("Se&ttings…"), QKeySequence(Qt::CTRL | Qt::Key_Comma), this, [this] { showSettings(); });
     file->addSeparator();
@@ -197,11 +205,11 @@ void MainWindow::createMenus()
     format->addAction(tr("Insert S&ymbol…"), this, &MainWindow::toggleSymbolPicker);
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
-    QAction *togglePanel = view->addAction(tr("&Folder Panel"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this,
-                                           [this] { m_folderPanel->setVisible(!m_folderPanel->isVisible()); });
+    QAction *togglePanel = view->addAction(tr("&Sidebar"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this,
+                                           [this] { m_sidebar->setVisible(!m_sidebar->isVisible()); });
     togglePanel->setCheckable(true);
     connect(view, &QMenu::aboutToShow, this, [this, togglePanel] {
-        togglePanel->setChecked(m_folderPanel->isVisible());
+        togglePanel->setChecked(m_sidebar->isVisible());
     });
     view->addSeparator();
     view->addAction(tr("&Next Tab"), QKeySequence::NextChild, this, [this] {
@@ -415,18 +423,18 @@ bool MainWindow::openFile(const QString &path)
 
     m_tabs->setCurrentWidget(tab);
     RecentFiles::add(absolute);
-    if (m_folderPanel->rootPath().isEmpty())
+    if (m_sidebar->rootPath().isEmpty())
         openFolder(QFileInfo(absolute).absolutePath());
-    m_folderPanel->selectFile(absolute);
+    m_sidebar->selectFile(absolute);
     return true;
 }
 
 void MainWindow::openFolder(const QString &path)
 {
-    m_folderPanel->setRootPath(path);
-    m_folderPanel->setVisible(true);
+    m_sidebar->setRootPath(path);
+    m_sidebar->setVisible(true);
     if (EditorTab *tab = currentTab(); tab && !tab->isUntitled())
-        m_folderPanel->selectFile(tab->filePath());
+        m_sidebar->selectFile(tab->filePath());
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -448,10 +456,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
     QSettings settings;
     settings.setValue("window/geometry", saveGeometry());
     settings.setValue("window/splitter", m_splitter->saveState());
-    settings.setValue("window/folderPanel", m_folderPanel->isVisible());
+    settings.setValue("window/folderPanel", m_sidebar->isVisible());
+    m_sidebar->saveLayout();
     settings.setValue("session/files", files);
     settings.setValue("session/current", currentTab()->filePath());
-    settings.setValue("session/folder", m_pendingFolder.isEmpty() ? m_folderPanel->rootPath() : m_pendingFolder);
+    settings.setValue("session/folder", m_pendingFolder.isEmpty() ? m_sidebar->rootPath() : m_pendingFolder);
     event->accept();
 }
 
@@ -516,7 +525,7 @@ int MainWindow::findTab(const QString &path) const
 EditorTab *MainWindow::addTab()
 {
     auto *tab = new EditorTab(m_tabs);
-    tab->editor()->setBaseDirectory(m_folderPanel->rootPath());
+    tab->editor()->setBaseDirectory(m_sidebar->rootPath());
     connect(tab, &EditorTab::stateChanged, this, [this, tab] {
         updateTabTitle(tab);
         if (tab == currentTab())
@@ -566,6 +575,19 @@ void MainWindow::openFileDialog()
         openFile(path);
 }
 
+void MainWindow::openVaultDialog()
+{
+    const QString path = QFileDialog::getExistingDirectory(this, tr("Open Vault"), dialogDirectory());
+    if (!path.isEmpty())
+        openVault(path);
+}
+
+void MainWindow::openVault(const QString &path)
+{
+    AppSettings::instance().setValue(AppSettings::vaultPathKey, path);
+    m_sidebar->setVaultRoot(path);
+}
+
 void MainWindow::openFolderDialog()
 {
     const QString path = QFileDialog::getExistingDirectory(this, tr("Open Folder"), dialogDirectory());
@@ -611,7 +633,7 @@ bool MainWindow::saveTo(EditorTab *tab, const QString &path, bool overwrite)
         return false;
     }
     RecentFiles::add(tab->filePath());
-    m_folderPanel->selectFile(tab->filePath());
+    m_sidebar->selectFile(tab->filePath());
     return true;
 }
 
@@ -710,8 +732,8 @@ QString MainWindow::dialogDirectory() const
 {
     if (EditorTab *tab = currentTab(); tab && !tab->isUntitled())
         return QFileInfo(tab->filePath()).absolutePath();
-    if (!m_folderPanel->rootPath().isEmpty())
-        return m_folderPanel->rootPath();
+    if (!m_sidebar->rootPath().isEmpty())
+        return m_sidebar->rootPath();
     return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
 }
 
