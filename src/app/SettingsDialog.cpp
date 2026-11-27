@@ -9,6 +9,7 @@
 #include "plugins/PluginManager.h"
 #include "theme/ThemeManager.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -92,6 +93,7 @@ SettingsDialog::SettingsDialog(CloudDrive *drive, QWidget *parent)
     addPage(tr("Formatting"), createFormattingPage());
     addPage(tr("Google Drive"), new CloudDrivePage(drive));
     addPage(tr("Plugins"), createPluginsPage());
+    addPage(tr("Updates"), createUpdatesPage());
     m_sections->setCurrentRow(0);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
@@ -119,6 +121,33 @@ void SettingsDialog::showPage(const QString &title)
         if (m_sections->item(i)->data(Qt::UserRole).toString() == title)
             m_sections->setCurrentRow(i);
     }
+}
+
+QWidget *SettingsDialog::createUpdatesPage()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->addWidget(heading(tr("Updates")));
+    layout->addWidget(new QLabel(tr("This is MDEditor %1.").arg(QApplication::applicationVersion()), page));
+
+    auto *onStart = new QCheckBox(tr("Check for updates when MDEditor starts"), page);
+    onStart->setChecked(AppSettings::instance().checkUpdatesOnStart());
+    connect(onStart, &QCheckBox::toggled, this,
+            [](bool checked) { AppSettings::instance().setValue(AppSettings::checkUpdatesOnStartKey, checked); });
+    layout->addWidget(onStart);
+
+    auto *now = new QPushButton(tr("Check Now"), page);
+    connect(now, &QPushButton::clicked, this, &SettingsDialog::checkForUpdatesRequested);
+    auto *row = new QHBoxLayout;
+    row->addWidget(now);
+    row->addStretch();
+    layout->addLayout(row);
+    layout->addWidget(hint(tr("A check asks GitHub (api.github.com) for the latest MDEditor release; nothing about "
+                              "you or your files is sent. At startup it runs at most once a day and only speaks up "
+                              "when there's a new version. The Windows setup and the AppImage can install the "
+                              "update themselves; the .deb and .zip link to the download.")));
+    layout->addStretch();
+    return page;
 }
 
 QWidget *SettingsDialog::createPluginsPage()

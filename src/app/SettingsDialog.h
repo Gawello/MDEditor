@@ -17,12 +17,16 @@ public:
 
     void showPage(const QString &title);
 
+signals:
+    void checkForUpdatesRequested();
+
 private:
     void addPage(const QString &title, QWidget *page);
     QWidget *createAppearancePage();
     QWidget *createEditorPage();
     QWidget *createFormattingPage();
     QWidget *createPluginsPage();
+    QWidget *createUpdatesPage();
 
     QListWidget *m_sections;
     QStackedWidget *m_pages;

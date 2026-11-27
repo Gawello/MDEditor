@@ -29,6 +29,9 @@ public:
     static constexpr auto driveConnectOnStartKey = "drive/connectOnStart";
     static constexpr auto driveRclonePathKey = "drive/rclonePath"; // empty: rclone from PATH
     static constexpr auto driveMountPidKey = "drive/mountPid";
+    static constexpr auto checkUpdatesOnStartKey = "updates/checkOnStart";
+    static constexpr auto lastUpdateCheckKey = "updates/lastCheck"; // UTC
+    static constexpr auto skippedUpdateKey = "updates/skippedVersion";
 
     QString theme() const { return value(themeKey, QStringLiteral("system")).toString(); }
     QString fontFamily() const { return value(fontFamilyKey).toString(); } // empty: system default
@@ -39,6 +42,7 @@ public:
     // For files that aren't valid UTF-8 and have no byte order mark.
     QString fallbackEncoding() const;
     bool formatOnSave() const { return value(formatOnSaveKey, false).toBool(); }
+    bool checkUpdatesOnStart() const { return value(checkUpdatesOnStartKey, false).toBool(); } // off: asks GitHub
     QStringList enabledPlugins() const { return value(enabledPluginsKey).toStringList(); }
 
     // External formatter command line for a language (empty: auto-detect / built-in).

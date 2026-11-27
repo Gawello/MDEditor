@@ -10,6 +10,7 @@
 #include "app/SymbolPicker.h"
 #include "app/TabCloseButton.h"
 #include "app/TablePicker.h"
+#include "app/UpdateController.h"
 #include "document/Encodings.h"
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
@@ -39,6 +40,7 @@
 #include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QUrl>
 
@@ -113,6 +115,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderPanel, &FolderPanel::moveRequested, this, &MainWindow::movePath);
 
     m_cloudDrive = new CloudDrive(this);
+    m_updates = new UpdateController(this);
     connect(m_cloudDrive, &CloudDrive::connected, this, [this](const QString &path, bool automatic) {
         statusBar()->showMessage(tr("Google Drive connected"), 8000);
         openPendingDriveItems();
@@ -262,7 +265,17 @@ void MainWindow::createMenus()
     populatePluginsMenu();
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
+    help->addAction(tr("Check for &Updates…"), this, [this] {
+        // Queued: the dialogs it opens shouldn't run inside the menu's event loop.
+        QMetaObject::invokeMethod(m_updates, &UpdateController::checkNow, Qt::QueuedConnection);
+    });
+    help->addSeparator();
     help->addAction(tr("&About MDEditor"), this, &MainWindow::about);
+}
+
+void MainWindow::checkForUpdatesOnStart()
+{
+    QTimer::singleShot(3000, m_updates, &UpdateController::checkOnStart);
 }
 
 void MainWindow::populatePluginsMenu()
@@ -1071,8 +1084,10 @@ QString MainWindow::dialogDirectory() const
 
 void MainWindow::showSettings(const QString &page)
 {
-    if (!m_settingsDialog)
+    if (!m_settingsDialog) {
         m_settingsDialog = new SettingsDialog(m_cloudDrive, this);
+        connect(m_settingsDialog, &SettingsDialog::checkForUpdatesRequested, m_updates, &UpdateController::checkNow);
+    }
     if (!page.isEmpty())
         m_settingsDialog->showPage(page);
     m_settingsDialog->show();

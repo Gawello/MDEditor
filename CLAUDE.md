@@ -151,6 +151,18 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Menu actions that open dialogs are queued (`QMetaObject::invokeMethod(..., Qt::QueuedConnection)`), so they
   run after the menu's own event loop has ended.
 
+### Updates
+
+- `Updates` (logic: release JSON, `InstallKind`, package per kind, AppImage swap), `Updater` (QNetworkAccessManager:
+  check + download with size/SHA-256 check from the API's `digest`), `UpdateController` (dialogs; Help menu,
+  Settings → Updates, `MainWindow::checkForUpdatesOnStart` 3 s after start if `updates/checkOnStart`, ≤ once per
+  20 h, silent unless newer and not skipped). Install kinds: NSIS (`Uninstall.exe` next to `bin`) downloads the
+  setup to temp, closes the window (unsaved prompt) and opens it through the shell (UAC); AppImage (`$APPIMAGE`)
+  downloads next to itself and renames over it, then restarts; `.deb` (`/opt/mdeditor`) and `.zip` get a link.
+  Asset names must match CPack's (`-win64.exe`, `-win64.zip`, `_amd64.deb`, `-x86_64.AppImage`).
+- `MDEDITOR_UPDATE_URL` overrides the API URL (file:// works): tests and the Xvfb check use a local release JSON.
+  This is the app's only network access.
+
 ### Settings, themes, formatting, plugins
 
 - `AppSettings` (singleton over QSettings) emits `changed(key)`; editors and the theme manager react live.
@@ -216,7 +228,7 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   the image (`highlightImageLine`, `BlockData::imageShown`); `MarkdownEditor::paintImage` then draws it.
   Sizes come from the editor through `ImageSizeProvider`; images are cached by absolute path and reloaded
   when the file's mtime changes. Width changes re-run highlighting (debounced), since sizes depend on the
-  text column width. Remote images are not fetched (no QtNetwork).
+  text column width. Remote images are not fetched (QtNetwork is only used for update checks).
 - Math: `InlineParser` marks `$...$` (pandoc rules: no inner spaces at the ends, closing `$` not before a digit) and
   `$$...$$` with `Math`; `BlockParser` has `MathOpen/Line/Close/Single` and `CommentLine` (`%%` blocks), with
   `BlockState::block` encoded as 5 / 7. Outside the cursor line, inline math gets an invisible slot as wide (and

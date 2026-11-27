@@ -28,7 +28,7 @@ add_library(mdcore STATIC
 target_include_directories(mdcore PUBLIC src)
 
 if(MDEDITOR_BUILD_APP)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Qml)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Qml Network)
     qt_standard_project_setup()
 
     add_subdirectory(third_party) # MicroTeX (math) with tinyxml2, Hunspell (spelling)
@@ -51,6 +51,9 @@ if(MDEDITOR_BUILD_APP)
         src/app/SymbolSets.cpp src/app/SymbolSets.h
         src/app/TabCloseButton.cpp src/app/TabCloseButton.h
         src/app/TablePicker.cpp src/app/TablePicker.h
+        src/app/UpdateController.cpp src/app/UpdateController.h
+        src/app/Updater.cpp src/app/Updater.h
+        src/app/Updates.cpp src/app/Updates.h
         src/document/Document.cpp src/document/Document.h
         src/document/Encodings.cpp src/document/Encodings.h
         src/editor/CodeHighlighter.cpp src/editor/CodeHighlighter.h
@@ -66,7 +69,7 @@ if(MDEDITOR_BUILD_APP)
         src/theme/Theme.cpp src/theme/Theme.h
         src/theme/ThemeManager.cpp src/theme/ThemeManager.h
     )
-    target_link_libraries(mdeditor_app PUBLIC mdcore microtex hunspell Qt6::Widgets Qt6::Qml)
+    target_link_libraries(mdeditor_app PUBLIC mdcore microtex hunspell Qt6::Widgets Qt6::Qml Qt6::Network)
 
     qt_add_executable(MDEditor WIN32 src/main.cpp)
     target_link_libraries(MDEditor PRIVATE mdeditor_app)

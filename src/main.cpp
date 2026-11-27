@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
     MainWindow window;
     window.show();
     window.restoreSession(parser.positionalArguments());
+    window.checkForUpdatesOnStart();
 
     const int result = app.exec();
     PluginManager::instance().shutdown();

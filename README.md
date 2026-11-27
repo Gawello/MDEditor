@@ -78,6 +78,11 @@ Download the latest release from the [Releases page](https://github.com/Gawello/
   its own Qt, adds the `mdeditor` command and a menu entry).
 - **Other Linux:** `chmod +x MDEditor-<version>-x86_64.AppImage` and run it.
 
+Help → Check for Updates… looks for a newer release (optionally at startup, once a day: Settings → Updates;
+off by default). The Windows installer and the AppImage install it themselves (the setup runs, or the AppImage
+is replaced in place); the `.deb` and the `.zip` link to the download. Packages are checked against the
+SHA-256 digests GitHub publishes for release files.
+
 Every CI run also uploads these packages as build artifacts. Releases are published automatically when a
 tag `v<version>` matching the version in `CMakeLists.txt` is pushed.
 

@@ -14,6 +14,7 @@ class QToolButton;
 class CloudDrive;
 class SettingsDialog;
 class SymbolPicker;
+class UpdateController;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -25,6 +26,8 @@ public:
     void restoreSession(const QStringList &files);
     bool openFile(const QString &path);
     void openFolder(const QString &path);
+    // A few seconds after startup, if enabled in Settings (Help → Check for Updates works any time).
+    void checkForUpdatesOnStart();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -106,6 +109,7 @@ private:
     SymbolPicker *m_symbolPicker = nullptr;
     SettingsDialog *m_settingsDialog = nullptr;
     CloudDrive *m_cloudDrive;
+    UpdateController *m_updates;
     // Session items on Google Drive, waiting for the mount.
     QString m_pendingFolder;
     QStringList m_pendingFiles;
