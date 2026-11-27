@@ -250,6 +250,7 @@ void FolderPanel::setRootPath(const QString &path)
     m_tree->setVisible(true);
     m_title->setText(QDir(m_root).dirName().isEmpty() ? m_root : QDir(m_root).dirName());
     m_title->setToolTip(QDir::toNativeSeparators(m_root));
+    emit rootChanged(m_root);
 }
 
 void FolderPanel::selectFile(const QString &path)

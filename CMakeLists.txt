@@ -21,6 +21,7 @@ add_library(mdcore STATIC
     src/markdown/Entities.cpp
     src/markdown/InlineParser.cpp
     src/markdown/LineStyle.cpp
+    src/markdown/NoteScan.cpp
     src/markdown/TableEdit.cpp
     src/markdown/TableParser.cpp
     src/syntax/Syntax.cpp
@@ -46,6 +47,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
+        src/app/PaletteDialog.cpp src/app/PaletteDialog.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/SymbolPicker.cpp src/app/SymbolPicker.h
         src/app/SymbolSets.cpp src/app/SymbolSets.h
@@ -61,8 +63,15 @@ if(MDEDITOR_BUILD_APP)
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
         src/editor/MarkdownEditor.cpp src/editor/MarkdownEditor.h
         src/editor/MathRenderer.cpp src/editor/MathRenderer.h
+        src/notes/NoteIndex.cpp src/notes/NoteIndex.h
+        src/notes/Templates.cpp src/notes/Templates.h
         src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
+        src/panels/GraphView.cpp src/panels/GraphView.h
+        src/panels/OutlinePanel.cpp src/panels/OutlinePanel.h
+        src/panels/SearchPanel.cpp src/panels/SearchPanel.h
+        src/panels/SideBar.cpp src/panels/SideBar.h
+        src/panels/TagPanel.cpp src/panels/TagPanel.h
         src/plugins/PluginApi.cpp src/plugins/PluginApi.h
         src/plugins/PluginManager.cpp src/plugins/PluginManager.h
         src/spell/SpellChecker.cpp src/spell/SpellChecker.h

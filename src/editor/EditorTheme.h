@@ -34,6 +34,9 @@ struct EditorTheme {
     // out as empty boxes or in a gray symbol font on Linux.
     static QStringList withEmoji(const QFont &font);
 
+    // An Obsidian callout's color by its type ("note", "warning", ...); unknown types are notes.
+    static QColor calloutColor(const QString &type);
+
     // Linear blend between two colors, t = 0 gives a, t = 1 gives b.
     static QColor mix(const QColor &a, const QColor &b, qreal t);
 };

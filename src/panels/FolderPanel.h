@@ -35,6 +35,7 @@ signals:
     void rootRequested(const QString &folder);
     // `folder` empty: ask where to.
     void moveRequested(const QString &path, const QString &folder);
+    void rootChanged(const QString &root);
 
 protected:
     void changeEvent(QEvent *event) override;

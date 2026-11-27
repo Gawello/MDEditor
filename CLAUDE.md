@@ -75,7 +75,10 @@ cmake --build --preset core; ctest --preset core          # parser only, no Qt n
   `/run/user/<uid>/bus` by itself), `XDG_CONFIG_HOME`/`XDG_DATA_HOME` under `build/guitest` (same drive as $HOME, so
   the trash works; create `XDG_DATA_HOME` first, Qt doesn't), and fake `dbus-send`/`xdg-open` scripts first on PATH
   that log their arguments. Drive it with `xdotool`, capture with `import -window root`. On Xvfb `xdotool key F2`
-  arrives with Alt held (all F keys do): send the keycode instead (`xdotool keydown 68 keyup 68`). Menu entries are
+  arrives with Alt held (all F keys do): send the keycode instead (`xdotool keydown 68 keyup 68`). A shortcut sent
+  right after a click or Escape is sometimes lost: wait ~0.5 s, or use `keydown ctrl key p keyup ctrl`. Without a
+  window manager new top-level windows open at (0, 0) and Alt+letter menu mnemonics type into the editor: click
+  the menu instead. Menu entries are
   easiest to reach by their mnemonics (right click, then the letter keys). Stop it with
   `pkill -x MDEditor` (`pkill -f` matches the calling shell too).
 - To check that a packaged build starts, launch it minimized and list its visible windows passively
@@ -120,6 +123,12 @@ src/app/                MainWindow (tabs, menus, status bar, session), EditorTab
                         show in file manager), Bookmarks (AppSettings `bookmarks`),
                         RecentFiles, TabCloseButton, TablePicker, SymbolPicker + SymbolSets
 docs/                   plugins.md (plugin API), themes.md (theme JSON); examples/plugins/ = sample plugins
+src/markdown/NoteScan   Qt-free: a note's headings, tags (inline + frontmatter), links, properties; parseBlocks, foldEnd
+src/notes/NoteIndex     every file under the open folder + NoteScan of each note, built off the GUI thread, refreshed
+                        on activation (re-reads changed files only); resolve() for [[links]]; tagCounts()
+src/notes/Templates     moment.js-style dates, {{title}}/{{date}}/{{time}} expansion, daily note paths
+src/panels/             SideBar (right: OutlinePanel, SearchPanel, TagPanel), GraphView (force layout, own window)
+src/app/PaletteDialog   quick switcher / command palette / template picker: fuzzy list, frameless modal dialog
 src/spell/SpellChecker  Hunspell dictionaries (several languages at once), background loading, user words
 third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the local patch) + tinyxml2, Hunspell
                         1.7.2 (MPL); built with warnings off and SYSTEM includes. TeX fonts are Qt resources.
@@ -150,6 +159,24 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   A file moved to another drive is copied, then deleted.
 - Menu actions that open dialogs are queued (`QMetaObject::invokeMethod(..., Qt::QueuedConnection)`), so they
   run after the menu's own event loop has ended.
+
+### Obsidian features (navigation, notes)
+
+- Ctrl+O is the quick switcher (Obsidian's), the file dialog is Ctrl+Alt+O; Ctrl+P the command palette, which lists
+  the menu bar's actions (emitting each menu's `aboutToShow` first, so self-filling menus are included).
+- `NoteIndex` follows `FolderPanel::rootChanged`; `MainWindow::saveTo` passes the saved text to `update()`.
+  `MarkdownEditor::setLinkResolver` (static) makes [[links]], Ctrl+click and embeds resolve through the index.
+- Inline: `#tag` (`md::Tag`, after whitespace, not only digits, locked so `_` isn't emphasis) and `[^label]`
+  (`md::Footnote`; a definition when it starts the text and ':' follows). Blocks: `FrontmatterOpen/Line/Close` (only
+  when `parseLine(..., firstLine)` is true, so pass `blockNumber() == 0` everywhere lines are parsed; state 9;
+  active as a whole like tables), callouts are `Quote` lines with `calloutStart/End/Fold`.
+- Callout boxes and the frontmatter background are painted under the text (`paintBoxes`); the first line shows
+  the title or the capitalized type (`QFont::Capitalize`), the text itself never changes.
+- Folding is per view: `BlockData::folded` survives re-highlighting (the highlighter resets everything else), a
+  callout's "-" is applied once (`foldSeen`). `applyFolds` (after every change, 0 ms timer) hides with
+  `QTextBlock::setVisible` + `setLineCount(0)` + `markContentsDirty`; the cursor landing in hidden text unfolds it.
+- Embeds reuse the image slot: the size provider returns the rendered note's box (`QTextDocument::setMarkdown`,
+  at most 420 px, faded when cut), cached by path + section + mtime + width.
 
 ### Updates
 
@@ -221,7 +248,7 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - `LivePreviewHighlighter::setActiveBlock` tracks the cursor block plus the active table's block range, and
   re-highlights only the blocks whose rendering changes.
 - `BlockState` must round-trip through one `int` (`QTextBlock::userState`): fences encode as even values >= 12,
-  table states as 1 and 3, the default as -1. Inside a fence, bits 16+ (`BlockState::code`) carry the code
+  table states as 1 and 3, math / comment / frontmatter blocks as 5 / 7 / 9, the default as -1. Inside a fence, bits 16+ (`BlockState::code`) carry the code
   highlighter's language id and open comment/string, so a change there re-highlights the following lines.
 - Images: when a paragraph line holds nothing but one image link (`![](…)` / `![[…]]`), the highlighter
   collapses the text and gives the first character an invisible, huge point size so the line is as tall as

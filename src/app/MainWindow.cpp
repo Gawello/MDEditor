@@ -1,5 +1,6 @@
 #include "app/MainWindow.h"
 
+#include "app/AppSettings.h"
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
 #include "app/FileActions.h"
@@ -10,16 +11,26 @@
 #include "app/SymbolPicker.h"
 #include "app/TabCloseButton.h"
 #include "app/TablePicker.h"
+#include "app/PaletteDialog.h"
 #include "app/UpdateController.h"
 #include "document/Encodings.h"
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
+#include "notes/NoteIndex.h"
+#include "notes/Templates.h"
 #include "panels/FolderPanel.h"
+#include "panels/GraphView.h"
+#include "panels/OutlinePanel.h"
+#include "panels/SearchPanel.h"
+#include "panels/SideBar.h"
+#include "panels/TagPanel.h"
 #include "plugins/PluginManager.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QVBoxLayout>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDir>
@@ -27,6 +38,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -86,11 +98,37 @@ MainWindow::MainWindow(QWidget *parent)
     m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
     applyStyle();
 
+    m_index = new NoteIndex(this);
+    m_sideBar = new SideBar(this);
+    m_outline = new OutlinePanel(m_sideBar);
+    m_search = new SearchPanel(m_index, m_sideBar);
+    m_tagPanel = new TagPanel(m_index, m_sideBar);
+    m_outline->setObjectName(QStringLiteral("outline"));
+    m_search->setObjectName(QStringLiteral("search"));
+    m_tagPanel->setObjectName(QStringLiteral("tags"));
+    m_sideBar->addPage(tr("Outline"), m_outline);
+    m_sideBar->addPage(tr("Search"), m_search);
+    m_sideBar->addPage(tr("Tags"), m_tagPanel);
+    m_sideBar->hide();
+    connect(m_search, &SearchPanel::openRequested, this, &MainWindow::openAt);
+    connect(m_tagPanel, &TagPanel::tagActivated, this, [this](const QString &tag) {
+        m_sideBar->showPage(m_search);
+        m_search->showTag(tag);
+    });
+    connect(m_folderPanel, &FolderPanel::rootChanged, m_index, &NoteIndex::setRoot);
+    // [[Links]] and embeds find notes anywhere in the open folder, like in Obsidian.
+    MarkdownEditor::setLinkResolver([index = QPointer<NoteIndex>(m_index)](const QString &target, bool wiki,
+                                                                          const QString &from) {
+        return index ? index->resolve(target, wiki, from) : QString();
+    });
+
     m_splitter->addWidget(m_folderPanel);
     m_splitter->addWidget(m_paneSplitter);
+    m_splitter->addWidget(m_sideBar);
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
-    m_splitter->setSizes({240, 800});
+    m_splitter->setStretchFactor(2, 0);
+    m_splitter->setSizes({240, 800, 260});
     m_splitter->setChildrenCollapsible(false);
     setCentralWidget(m_splitter);
     setAcceptDrops(true);
@@ -136,6 +174,9 @@ MainWindow::MainWindow(QWidget *parent)
     auto *encodingMenu = new QMenu(m_encodingButton);
     connect(encodingMenu, &QMenu::aboutToShow, this, [this, encodingMenu] { populateEncodingMenu(encodingMenu); });
     m_encodingButton->setMenu(encodingMenu);
+    m_wordCount = new QLabel(this);
+    m_wordCount->setForegroundRole(QPalette::PlaceholderText);
+    statusBar()->addPermanentWidget(m_wordCount);
     statusBar()->addPermanentWidget(m_encodingButton);
     // Coming back to the window is when changes made elsewhere matter. No file watcher: they are
     // unreliable on network drives, and a watcher's stat calls could hang on a disconnected one.
@@ -144,6 +185,7 @@ MainWindow::MainWindow(QWidget *parent)
             return;
         for (EditorTab *tab : allTabs())
             tab->checkDisk();
+        m_index->refresh(); // notes may have been edited elsewhere
     });
     addTab();
 
@@ -158,13 +200,23 @@ MainWindow::MainWindow(QWidget *parent)
         resize(1100, 750);
     m_splitter->restoreState(settings.value("window/splitter").toByteArray());
     m_folderPanel->setVisible(settings.value("window/folderPanel", true).toBool());
+    m_sideBar->setVisible(settings.value("window/sideBar", false).toBool());
+    if (QWidget *page = m_sideBar->findChild<QWidget *>(settings.value("window/sidePage").toString()))
+        m_sideBar->showPage(page);
 }
 
 void MainWindow::createMenus()
 {
     QMenu *file = menuBar()->addMenu(tr("&File"));
     file->addAction(tr("&New Tab"), QKeySequence::New, this, &MainWindow::newFile);
-    file->addAction(tr("&Open…"), QKeySequence::Open, this, &MainWindow::openFileDialog);
+    // Ctrl+O is Obsidian's quick switcher; the file dialog moves to Ctrl+Alt+O.
+    file->addAction(tr("Q&uick Switcher…"), QKeySequence(Qt::CTRL | Qt::Key_O), this, [this] {
+        QMetaObject::invokeMethod(this, &MainWindow::showQuickSwitcher, Qt::QueuedConnection);
+    });
+    file->addAction(tr("&Open…"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_O), this, &MainWindow::openFileDialog);
+    file->addAction(tr("Open To&day's Note"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), this, [this] {
+        QMetaObject::invokeMethod(this, &MainWindow::openDailyNote, Qt::QueuedConnection);
+    });
     m_recentMenu = file->addMenu(tr("Open &Recent"));
     connect(m_recentMenu, &QMenu::aboutToShow, this, &MainWindow::populateRecentMenu);
     file->addAction(tr("Open &Folder…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O), this,
@@ -208,6 +260,14 @@ void MainWindow::createMenus()
     edit->addAction(tr("Find &Next"), QKeySequence::FindNext, this, [this] { currentTab()->findBar()->findNext(); });
     edit->addAction(tr("Find Pre&vious"), QKeySequence::FindPrevious, this,
                     [this] { currentTab()->findBar()->findPrevious(); });
+    edit->addAction(tr("Search in F&older…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), this, [this] {
+        m_sideBar->show();
+        m_sideBar->showPage(m_search);
+        const QTextCursor cursor = currentEditor()->textCursor();
+        m_search->focusSearch(cursor.hasSelection() && !cursor.selectedText().contains(QChar::ParagraphSeparator)
+                                  ? cursor.selectedText()
+                                  : QString());
+    });
 
     // Markdown commands act on Markdown only: in a plain text file their shortcuts do nothing.
     QMenu *format = menuBar()->addMenu(tr("F&ormat"));
@@ -231,6 +291,18 @@ void MainWindow::createMenus()
     QAction *togglePanel = view->addAction(tr("&Folder Panel"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this,
                                            [this] { m_folderPanel->setVisible(!m_folderPanel->isVisible()); });
     togglePanel->setCheckable(true);
+    QAction *toggleSideBar = view->addAction(tr("Right Side&bar"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B), this,
+                                             [this] { m_sideBar->setVisible(!m_sideBar->isVisible()); });
+    toggleSideBar->setCheckable(true);
+    view->addAction(tr("O&utline"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), this,
+                    [this] { toggleSidePage(m_outline); });
+    view->addAction(tr("Ta&gs"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T), this,
+                    [this] { toggleSidePage(m_tagPanel); });
+    view->addAction(tr("Graph &View"), QKeySequence(Qt::CTRL | Qt::Key_G), this, &MainWindow::showGraph);
+    view->addAction(tr("&Command Palette…"), QKeySequence(Qt::CTRL | Qt::Key_P), this, [this] {
+        QMetaObject::invokeMethod(this, &MainWindow::showCommandPalette, Qt::QueuedConnection);
+    });
+    view->addSeparator();
     // Per tab: Markdown files start with the live preview, other text files without.
     QAction *livePreview = view->addAction(tr("&Live Preview"), QKeySequence(Qt::CTRL | Qt::Key_E), this, [this] {
         currentEditor()->setMarkdownMode(!currentEditor()->markdownMode());
@@ -242,8 +314,9 @@ void MainWindow::createMenus()
                                                                                 : QPlainTextEdit::NoWrap);
     });
     wordWrap->setCheckable(true);
-    connect(view, &QMenu::aboutToShow, this, [this, togglePanel, livePreview, wordWrap] {
+    connect(view, &QMenu::aboutToShow, this, [this, togglePanel, toggleSideBar, livePreview, wordWrap] {
         togglePanel->setChecked(m_folderPanel->isVisible());
+        toggleSideBar->setChecked(m_sideBar->isVisible());
         livePreview->setChecked(currentEditor()->markdownMode());
         wordWrap->setChecked(currentEditor()->lineWrapMode() != QPlainTextEdit::NoWrap);
     });
@@ -257,6 +330,19 @@ void MainWindow::createMenus()
     view->addSeparator();
     view->addAction(tr("Split &Right"), this, [this] { splitTab(currentTab(), Qt::Horizontal); });
     view->addAction(tr("Split &Down"), this, [this] { splitTab(currentTab(), Qt::Vertical); });
+    view->addSeparator();
+    view->addAction(tr("&Toggle Fold"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_BracketLeft), this, [this] {
+        if (MarkdownEditor *editor = markdownEditor())
+            editor->toggleFoldAtCursor();
+    });
+    view->addAction(tr("Fold All &Headings"), this, [this] {
+        if (MarkdownEditor *editor = markdownEditor())
+            editor->setAllFolded(true);
+    });
+    view->addAction(tr("Unfold &All"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_BracketRight), this, [this] {
+        if (MarkdownEditor *editor = markdownEditor())
+            editor->setAllFolded(false);
+    });
     view->addSeparator();
     view->addAction(tr("Zoom &In"), QKeySequence::ZoomIn, this, [this] { currentEditor()->zoomIn(1); });
     view->addAction(tr("Zoom &Out"), QKeySequence::ZoomOut, this, [this] { currentEditor()->zoomOut(1); });
@@ -374,6 +460,12 @@ void MainWindow::updateMarkdownActions()
     const bool enabled = currentTab() && markdownEditor();
     for (QAction *action : std::as_const(m_markdownActions))
         action->setEnabled(enabled);
+    // Called whenever the current tab or its mode changes: what follows the current editor follows here.
+    if (m_outline)
+        m_outline->setEditor(currentTab() ? currentEditor() : nullptr);
+    if (m_graph && currentTab())
+        m_graph->setCurrent(currentTab()->filePath());
+    updateWordCount();
 }
 
 // Flat, Obsidian-like tabs; colors are derived from the palette so light and dark modes both work.
@@ -627,6 +719,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
     settings.setValue("window/geometry", saveGeometry());
     settings.setValue("window/splitter", m_splitter->saveState());
     settings.setValue("window/folderPanel", m_folderPanel->isVisible());
+    settings.setValue("window/sideBar", m_sideBar->isVisible());
+    settings.setValue("window/sidePage", m_sideBar->currentPage()->objectName());
     settings.setValue("session/files", files);
     settings.setValue("session/files2", m_panes.size() > 1 ? filesOf(m_panes[1]) : QStringList());
     settings.setValue("session/splitVertical", m_paneSplitter->orientation() == Qt::Vertical);
@@ -862,6 +956,14 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
         }
     });
     connect(tab->editor(), &MarkdownEditor::openFileRequested, this, &MainWindow::openFile);
+    connect(tab->editor(), &QPlainTextEdit::selectionChanged, this, [this, tab] {
+        if (tab == currentTab())
+            updateWordCount();
+    });
+    connect(tab->editor()->document(), &QTextDocument::contentsChanged, this, [this, tab] {
+        if (tab == currentTab())
+            updateWordCount();
+    });
     connect(tab->editor(), &MarkdownEditor::filesDropped, this, &MainWindow::openFiles);
     connect(tab->editor(), &MarkdownEditor::markdownModeChanged, this, [this, tab] {
         if (tab == currentTab())
@@ -869,6 +971,13 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
     });
     connect(tab->editor(), &MarkdownEditor::insertTableRequested, this,
             [this](const QPoint &globalPos) { showTablePicker(globalPos, false); });
+    connect(tab->editor(), &MarkdownEditor::insertTemplateRequested, this, [this, tab] {
+        QPointer<MarkdownEditor> editor = tab->editor();
+        QMetaObject::invokeMethod(this, [this, editor] {
+            if (editor)
+                insertTemplate(editor);
+        }, Qt::QueuedConnection);
+    });
     connect(tab->editor(), &MarkdownEditor::insertSymbolRequested, this, [this] {
         if (!m_symbolPicker || !m_symbolPicker->isVisible())
             toggleSymbolPicker();
@@ -977,6 +1086,7 @@ bool MainWindow::saveTo(EditorTab *tab, const QString &path, bool overwrite)
         return false;
     }
     RecentFiles::add(tab->filePath());
+    m_index->update(tab->filePath(), tab->editor()->markdown());
     m_folderPanel->selectFile(tab->filePath());
     return true;
 }
@@ -1102,6 +1212,271 @@ void MainWindow::about()
                           "<p>A lightweight Markdown editor with live preview.</p>"
                           "<p>Released under the MIT License.</p>")
                            .arg(QApplication::applicationVersion()));
+}
+
+// --- Quick switcher, command palette, sidebar ------------------------------------------------------
+
+void MainWindow::showQuickSwitcher()
+{
+    PaletteDialog dialog(this, tr("Find or create a note…"),
+                         tr("↑↓ to move · Enter to open · Shift+Enter to create"));
+    const QString root = m_index->root();
+    const QDir rootDir(root);
+    QList<PaletteDialog::Item> items;
+    QSet<QString> seen;
+    const auto add = [&](const QString &path, const QString &badge) {
+        if (path.isEmpty() || seen.contains(path))
+            return;
+        seen.insert(path);
+        const QFileInfo info(path);
+        const bool note = MarkdownEditor::isMarkdownFile(path);
+        QString folder = !root.isEmpty() && path.startsWith(root + u'/') ? rootDir.relativeFilePath(info.absolutePath())
+                                                                         : QDir::toNativeSeparators(info.absolutePath());
+        if (folder == u".")
+            folder.clear();
+        items.append({note ? info.completeBaseName() : info.fileName(), folder, badge,
+                      [this, path] { openFile(path); }});
+    };
+    // Open tabs and recent files first: with an empty query they're what you want.
+    for (EditorTab *tab : allTabs()) {
+        if (!tab->isUntitled())
+            add(tab->filePath(), tr("open"));
+    }
+    for (const QString &path : RecentFiles::list())
+        add(path, tr("recent"));
+    for (const QString &path : m_index->files())
+        add(path, {});
+    dialog.setItems(items);
+    dialog.setFallback([this](const QString &query) -> std::optional<PaletteDialog::Item> {
+        if (query.contains(u'\\') || query.startsWith(u'.'))
+            return std::nullopt;
+        return PaletteDialog::Item{tr("Create note: %1").arg(query), {}, tr("Shift+Enter"),
+                                   [this, query] { createNamedNote(query); }};
+    });
+    dialog.choose();
+}
+
+void MainWindow::showCommandPalette()
+{
+    PaletteDialog dialog(this, tr("Type a command…"));
+    QList<PaletteDialog::Item> items;
+    std::function<void(QMenu *, const QString &)> collect = [&](QMenu *menu, const QString &path) {
+        emit menu->aboutToShow(); // menus that fill or update themselves when opened
+        for (QAction *action : menu->actions()) {
+            if (action->isSeparator() || !action->isVisible())
+                continue;
+            QString text = action->text().section(u'\t', 0, 0);
+            text.remove(u'&');
+            if (QMenu *sub = action->menu()) {
+                collect(sub, path.isEmpty() ? text : path + QStringLiteral(" › ") + text);
+                continue;
+            }
+            if (!action->isEnabled() || text.isEmpty())
+                continue;
+            QPointer<QAction> guard(action);
+            items.append({text, path, action->shortcut().toString(QKeySequence::NativeText), [guard] {
+                              if (guard)
+                                  guard->trigger();
+                          }});
+        }
+    };
+    for (QAction *action : menuBar()->actions()) {
+        if (QMenu *menu = action->menu())
+            collect(menu, action->text().remove(u'&'));
+    }
+    dialog.setItems(items);
+    dialog.choose();
+}
+
+void MainWindow::toggleSidePage(QWidget *page)
+{
+    if (m_sideBar->isVisible() && m_sideBar->currentPage() == page) {
+        m_sideBar->hide();
+        return;
+    }
+    m_sideBar->show();
+    m_sideBar->showPage(page);
+}
+
+void MainWindow::openAt(const QString &path, int line, int column, int length)
+{
+    if (!openFile(path))
+        return;
+    MarkdownEditor *editor = currentEditor();
+    const QTextBlock block = editor->document()->findBlockByNumber(line);
+    if (!block.isValid())
+        return;
+    QTextCursor cursor(block);
+    const int start = std::min(column, block.length() - 1);
+    cursor.setPosition(block.position() + start);
+    cursor.setPosition(block.position() + std::min(start + length, block.length() - 1), QTextCursor::KeepAnchor);
+    editor->setTextCursor(cursor);
+    editor->centerCursor();
+    editor->setFocus();
+}
+
+void MainWindow::createNamedNote(const QString &name)
+{
+    QString folder = m_index->root();
+    if (folder.isEmpty())
+        folder = dialogDirectory();
+    QString relative = name.trimmed();
+    if (!relative.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+        relative += QStringLiteral(".md");
+    const QString path = QDir::cleanPath(QDir(folder).filePath(relative));
+    if (QFileInfo::exists(path)) {
+        openFile(path);
+        return;
+    }
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    const FileActions::Result created = FileActions::createFile(path, this);
+    if (!created.ok) {
+        QMessageBox::warning(this, tr("Create Note"),
+                             tr("Cannot create %1:\n%2").arg(QDir::toNativeSeparators(path), created.error));
+        return;
+    }
+    if (openFile(path))
+        m_index->update(path, QString());
+}
+
+QString MainWindow::notesRoot() const
+{
+    return m_index->root().isEmpty() ? dialogDirectory() : m_index->root();
+}
+
+void MainWindow::showGraph()
+{
+    if (!m_graphWindow) {
+        m_graphWindow = new QWidget(this, Qt::Window);
+        m_graphWindow->setWindowTitle(tr("Graph"));
+        m_graphWindow->resize(760, 560);
+        m_graph = new GraphView(m_index, m_graphWindow);
+        auto *local = new QCheckBox(tr("Current note and its links only"), m_graphWindow);
+        auto *hint = new QLabel(tr("Drag to move · wheel to zoom · click a note to open it"), m_graphWindow);
+        hint->setForegroundRole(QPalette::PlaceholderText);
+        auto *bar = new QHBoxLayout;
+        bar->addWidget(local);
+        bar->addStretch();
+        bar->addWidget(hint);
+        auto *layout = new QVBoxLayout(m_graphWindow);
+        layout->setContentsMargins(6, 6, 6, 6);
+        layout->addLayout(bar);
+        layout->addWidget(m_graph, 1);
+        connect(local, &QCheckBox::toggled, m_graph, &GraphView::setLocal);
+        connect(m_graph, &GraphView::noteActivated, this, [this](const QString &path) {
+            openFile(path);
+            activateWindow();
+            raise();
+        });
+    }
+    if (EditorTab *tab = currentTab())
+        m_graph->setCurrent(tab->filePath());
+    m_graphWindow->show();
+    m_graphWindow->raise();
+    m_graphWindow->activateWindow();
+}
+
+void MainWindow::openDailyNote()
+{
+    const AppSettings &settings = AppSettings::instance();
+    const QString root = notesRoot();
+    const QString path =
+        Templates::dailyNotePath(root, settings.dailyFolder(), settings.dailyFormat(), QDate::currentDate());
+    if (QFileInfo::exists(path)) {
+        openFile(path);
+        return;
+    }
+    QString text;
+    if (const QString name = settings.dailyTemplate().trimmed(); !name.isEmpty()) {
+        QString templatePath = QDir::isAbsolutePath(name) ? name : QDir(root).filePath(name);
+        if (QFileInfo(templatePath).suffix().isEmpty())
+            templatePath += QStringLiteral(".md");
+        QFile file(templatePath);
+        if (file.open(QIODevice::ReadOnly))
+            text = Templates::expand(QString::fromUtf8(file.readAll()), QFileInfo(path).completeBaseName(),
+                                     QDateTime::currentDateTime());
+        else
+            statusBar()->showMessage(tr("Daily note template %1 not found").arg(QDir::toNativeSeparators(templatePath)),
+                                     8000);
+    }
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    const FileActions::Result created = FileActions::createFile(path, this);
+    if (!created.ok) {
+        QMessageBox::warning(this, tr("Daily Note"),
+                             tr("Cannot create %1:\n%2").arg(QDir::toNativeSeparators(path), created.error));
+        return;
+    }
+    if (!openFile(path))
+        return;
+    if (!text.isEmpty()) {
+        currentEditor()->replaceAll(text);
+        save(currentTab());
+    }
+    m_index->update(path, text);
+}
+
+void MainWindow::insertTemplate(MarkdownEditor *editor)
+{
+    const QString root = notesRoot();
+    const QString folderSetting = AppSettings::instance().templatesFolder();
+    const QString folder = QDir::isAbsolutePath(folderSetting) ? folderSetting : QDir(root).filePath(folderSetting);
+    const QStringList files = Templates::templateFiles(folder);
+    if (files.isEmpty()) {
+        QMessageBox::information(this, tr("Insert Template"),
+                                 tr("No templates found in %1.\n\nPut notes there to use them as templates, or choose "
+                                    "another folder in Settings → Notes.")
+                                     .arg(QDir::toNativeSeparators(folder)));
+        return;
+    }
+    PaletteDialog dialog(this, tr("Choose a template…"));
+    QList<PaletteDialog::Item> items;
+    const QDir base(folder);
+    QPointer<MarkdownEditor> target = editor;
+    for (const QString &path : files) {
+        const QString relative = base.relativeFilePath(QFileInfo(path).absolutePath());
+        items.append({QFileInfo(path).completeBaseName(), relative == u"." ? QString() : relative, {}, [this, target, path] {
+                          if (!target)
+                              return;
+                          QFile file(path);
+                          if (!file.open(QIODevice::ReadOnly))
+                              return;
+                          const QString title = target->documentPath().isEmpty()
+                              ? tr("Untitled")
+                              : QFileInfo(target->documentPath()).completeBaseName();
+                          target->insertPlainText(
+                              Templates::expand(QString::fromUtf8(file.readAll()), title, QDateTime::currentDateTime()));
+                          target->setFocus();
+                      }});
+    }
+    dialog.setItems(items);
+    dialog.choose();
+}
+
+void MainWindow::updateWordCount()
+{
+    if (!m_wordCount)
+        return;
+    EditorTab *tab = currentTab();
+    if (!tab) {
+        m_wordCount->clear();
+        return;
+    }
+    const QTextCursor cursor = tab->editor()->textCursor();
+    const bool selection = cursor.hasSelection();
+    // Selections and normal notes are counted at once; very long files only when the typing stops.
+    const QString text = selection ? cursor.selectedText() : tab->editor()->document()->toRawText();
+    int words = 0;
+    bool inWord = false;
+    for (const QChar c : text) {
+        const bool letter = c.isLetterOrNumber() || c == u'\'' || c == u'-' || c == u'_';
+        if (letter && !inWord)
+            ++words;
+        inWord = letter;
+    }
+    const int characters = int(text.size()) - int(text.count(QChar::ParagraphSeparator));
+    m_wordCount->setText(selection ? tr("%n word(s) selected", nullptr, words)
+                                   : tr("%n word(s)", nullptr, words) + QStringLiteral(" · ")
+                                         + tr("%n character(s)", nullptr, characters));
 }
 
 // --- Tab menu and file management ---------------------------------------------------------------

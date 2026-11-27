@@ -20,6 +20,21 @@ enum Style : std::uint16_t {
     Entity    = 1 << 8, // character reference, shown as what it stands for (see InlineResult::entities)
     Comment   = 1 << 9, // %%Obsidian comment%%
     Math      = 1 << 10, // $inline$ or $$display$$ TeX (see InlineResult::math)
+    Tag       = 1 << 11, // #tag, the '#' included (see InlineResult::tags)
+    Footnote  = 1 << 12, // the label of a [^footnote] reference or definition (see InlineResult::footnotes)
+};
+
+struct TagRange {
+    int start = 0; // the '#', [start, end)
+    int end = 0;
+};
+
+struct FootnoteRange {
+    int start = 0; // "[^label]", [start, end); a definition's ':' isn't included
+    int end = 0;
+    int labelStart = 0;
+    int labelEnd = 0;
+    bool definition = false; // "[^label]:" at the start of the text
 };
 
 struct MathRange {
@@ -52,6 +67,8 @@ struct InlineResult {
     std::vector<LinkRange> links;
     std::vector<EntityRange> entities; // in text order
     std::vector<MathRange> math;       // in text order
+    std::vector<TagRange> tags;        // in text order
+    std::vector<FootnoteRange> footnotes;
 };
 
 InlineResult parseInline(std::u16string_view text);

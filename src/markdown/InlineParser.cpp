@@ -40,9 +40,11 @@ public:
     {
         codeSpansAndEscapes();
         mathAndComments(); // before links: what's inside is TeX or hidden text, not Markdown
+        footnotes();       // before links: "[^1](x)" is still a footnote
         links();
         autolinks();
         entities(); // after what keeps text literal, before emphasis so "&ast;" can't open any
+        tags();     // before emphasis: "#snake_case_tag" has no italics
         emphasis();
         return std::move(r);
     }
@@ -247,6 +249,60 @@ private:
                 continue;
             }
             ++i;
+        }
+    }
+
+    // [^label]: a footnote reference, or its definition when it starts the text and a ':' follows.
+    void footnotes()
+    {
+        for (int i = 0; i + 3 < n; ++i) {
+            if (locked[i] || s[i] != u'[' || s[i + 1] != u'^' || locked[i + 1])
+                continue;
+            int close = -1;
+            for (int j = i + 2; j < n; ++j) {
+                if (locked[j] || isWs(s[j]) || s[j] == u'[')
+                    break;
+                if (s[j] == u']') {
+                    close = j;
+                    break;
+                }
+            }
+            if (close <= i + 2)
+                continue;
+            const bool definition = i == 0 && close + 1 < n && s[close + 1] == u':';
+            mark(i, i + 2, Marker, true);
+            mark(i + 2, close, Footnote, true);
+            mark(close, close + 1, Marker, true);
+            r.footnotes.push_back({i, close + 1, i + 2, close, definition});
+            i = close;
+        }
+    }
+
+    // Obsidian's #tags: after a space (or at the start), letters, digits, '_', '-' and '/' for nesting,
+    // not only digits ("#1" is an issue number).
+    void tags()
+    {
+        const auto tagChar = [](char16_t c) {
+            return isAsciiAlnum(c) || c == u'_' || c == u'-' || c == u'/' || (c >= 0x80 && c != 0x00A0 && !isWs(c)
+                && !(c >= 0x2000 && c <= 0x206F) && !(c >= 0x3000 && c <= 0x303F));
+        };
+        for (int i = 0; i + 1 < n; ++i) {
+            if (locked[i] || s[i] != u'#' || (i > 0 && !isWs(s[i - 1])))
+                continue;
+            int end = i + 1;
+            bool word = false;
+            while (end < n && !locked[end] && tagChar(s[end])) {
+                if (!(s[end] >= u'0' && s[end] <= u'9') && s[end] != u'/')
+                    word = true;
+                ++end;
+            }
+            while (end > i + 1 && s[end - 1] == u'/') // "#a/" is the tag "a"
+                --end;
+            if (!word || end == i + 1)
+                continue;
+            mark(i, end, Tag, true);
+            r.tags.push_back({i, end});
+            i = end - 1;
         }
     }
 

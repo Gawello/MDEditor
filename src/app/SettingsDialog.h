@@ -27,6 +27,7 @@ private:
     QWidget *createFormattingPage();
     QWidget *createPluginsPage();
     QWidget *createUpdatesPage();
+    QWidget *createNotesPage();
 
     QListWidget *m_sections;
     QStackedWidget *m_pages;

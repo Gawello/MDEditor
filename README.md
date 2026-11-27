@@ -40,6 +40,21 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`
   groups, all matches highlighted, Replace All as one undo step
+- Quick switcher (Ctrl+O): type part of a name to open any file in the folder, or Shift+Enter to create the note;
+  the file dialog is Ctrl+Alt+O. Command palette (Ctrl+P): every menu command by name
+- Right sidebar (Ctrl+Shift+B): Outline of the current note (Ctrl+Shift+L), Search in the folder (Ctrl+Shift+F, match
+  case, regular expressions) and Tags (Ctrl+Shift+T) with their note counts, nested `#tags/like/this` included
+- `#tags` shown as pills, YAML frontmatter shown as properties, `> [!note]` callouts as colored boxes (`[!tip]-`
+  starts folded), footnotes `[^1]` as superscripts with the text on hover (Ctrl+click jumps to it)
+- Folding: the chevron left of a heading, a list item with children or a callout hides what's under it; View →
+  Toggle Fold (Ctrl+Shift+[), Fold All Headings, Unfold All (Ctrl+Shift+])
+- `![[Note]]` and `![[Note#Heading]]` show that note (or section) in place; `[[links]]` find notes anywhere in the
+  open folder
+- Daily notes (File → Open Today's Note, Ctrl+Shift+D) and templates (Format → Insert → Template…) with
+  `{{title}}`, `{{date}}`, `{{time}}` and `{{date:dddd, D MMMM}}`; folders and date format in Settings → Notes
+- Graph view (View → Graph View, Ctrl+G): notes and their links, laid out by a force simulation; drag, zoom, click to
+  open, or only the current note and its neighbors
+- Word and character count in the status bar (of the selection, if any)
 - Tabs (Ctrl+N new, Ctrl+W or middle click to close, Ctrl+Tab to switch); open tabs are restored on the next start
 - File → Open Recent with the last 10 files
 - Optional folder panel (Ctrl+Shift+E) to browse any folder, without indexing anything. Its right-click menu

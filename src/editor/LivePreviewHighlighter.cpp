@@ -59,6 +59,25 @@ QTextBlock mathBlockEnd(QTextBlock block)
     return block;
 }
 
+QTextBlock frontmatterEnd(QTextBlock block)
+{
+    while (blockType(block) != BlockType::FrontmatterClose && block.next().isValid()
+           && md::isFrontmatterType(blockType(block.next())))
+        block = block.next();
+    return block;
+}
+
+QTextBlock calloutStart(QTextBlock block)
+{
+    while (block.isValid() && blockType(block) == BlockType::Quote) {
+        const auto *data = static_cast<const BlockData *>(block.userData());
+        if (data && data->info.calloutStart >= 0)
+            return block;
+        block = block.previous();
+    }
+    return {};
+}
+
 LivePreviewHighlighter::LivePreviewHighlighter(QTextDocument *document, const EditorTheme *theme)
     : QSyntaxHighlighter(document)
     , m_theme(theme)
@@ -97,6 +116,9 @@ bool LivePreviewHighlighter::setActiveBlock(int blockNumber)
     } else if (md::isMathType(blockType(block))) { // a formula shows its source as a whole, like a table
         first = mathBlockStart(block).blockNumber();
         last = mathBlockEnd(block).blockNumber();
+    } else if (md::isFrontmatterType(blockType(block))) { // so do properties
+        first = 0;
+        last = frontmatterEnd(block).blockNumber();
     }
     if (blockNumber == m_activeBlock && first == m_tableFirst && last == m_tableLast)
         return false;
@@ -170,7 +192,7 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     const QString nextText = next.isValid() ? next.text() : QString();
     const auto nextLine = next.isValid() ? std::optional(toView(nextText)) : std::nullopt;
     const md::BlockState previous = md::BlockState::decode(previousBlockState());
-    const auto result = md::parseLine(toView(text), previous, nextLine);
+    const auto result = md::parseLine(toView(text), previous, nextLine, currentBlock().blockNumber() == 0);
     md::BlockState nextState = result.next;
 
     // Code in fences is colored by its language (from the info string), carried in the state's `code` bits:
@@ -199,6 +221,7 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     data->math.clear();
     data->mathBlock.clear();
     data->mathShown = false;
+    data->callout.clear();
     recheckPreviousBlock(text);
 
     const md::BlockInfo &b = result.info;
@@ -248,6 +271,17 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     case BlockType::TableRow:
         highlightTableRow(text, b.type, active);
         return;
+    case BlockType::FrontmatterOpen:
+    case BlockType::FrontmatterLine:
+    case BlockType::FrontmatterClose:
+        highlightFrontmatter(text, b.type, active);
+        return;
+    case BlockType::Quote:
+        if (b.calloutStart >= 0) {
+            highlightCallout(text, b, data, active);
+            return;
+        }
+        break;
     default:
         break;
     }
@@ -296,6 +330,73 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
             [&](int i) { return i < contentStart || (parsed.styles[i - contentStart] & notProse); },
             [this](int i) { return format(i); },
             [this](int start, int count, const QTextCharFormat &f) { setFormat(start, count, f); });
+    }
+}
+
+// Properties: the source while the cursor is in them; otherwise the "---" lines shrink away, keys are dimmed
+// and the editor paints a box behind them.
+void LivePreviewHighlighter::highlightFrontmatter(const QString &text, md::BlockType type, bool active)
+{
+    const int length = int(text.size());
+    QTextCharFormat source = codeFormat();
+    source.setForeground(m_theme->codeText);
+    if (active) {
+        setFormat(0, length, type == BlockType::FrontmatterLine ? source : dimmed(source));
+        return;
+    }
+    if (type != BlockType::FrontmatterLine) {
+        setFormat(0, length, collapsed({}));
+        return;
+    }
+    QTextCharFormat value;
+    value.setFontPointSize(m_theme->baseFont.pointSizeF() * 0.95);
+    setFormat(0, length, value);
+    const int colon = int(text.indexOf(u':'));
+    if (colon > 0 && !text.at(0).isSpace()) {
+        QTextCharFormat key = value;
+        key.setForeground(m_theme->faint);
+        setFormat(0, colon + 1, key);
+    } else if (const int dash = int(text.indexOf(u'-')); dash >= 0 && text.left(dash).trimmed().isEmpty()) {
+        setFormat(dash, 1, dimmed(value)); // "  - item"
+    }
+}
+
+// The first line of a callout: "> [!type]- Title" shows as the title (or the type), bold and colored; the
+// editor paints the box. While the cursor is on it, it's an ordinary quote line.
+void LivePreviewHighlighter::highlightCallout(const QString &text, const md::BlockInfo &info, BlockData *data,
+                                              bool active)
+{
+    const int length = int(text.size());
+    const int close = int(text.indexOf(u']', info.calloutStart));
+    const QString type = text.mid(info.calloutStart + 2, close - info.calloutStart - 2).toLower();
+    data->callout = type;
+    if (!data->foldSeen) { // "[!type]-" starts folded, once: after that it's the user's choice
+        data->foldSeen = true;
+        data->folded = info.calloutFold == u'-';
+    }
+
+    QTextCharFormat base;
+    base.setFontWeight(QFont::DemiBold);
+    base.setForeground(EditorTheme::calloutColor(type));
+    setFormat(0, length, base);
+    if (active) {
+        setFormat(info.markerStart, info.calloutEnd - info.markerStart, dimmed(base));
+        if (info.calloutEnd < length)
+            applyInline(text.mid(info.calloutEnd), info.calloutEnd, base, true);
+        return;
+    }
+    setFormat(info.markerStart, info.markerLength, invisible(base)); // "> ": the box's padding
+    const bool titled = !text.mid(info.calloutEnd).trimmed().isEmpty();
+    if (titled) {
+        setFormat(info.calloutStart, info.calloutEnd - info.calloutStart, collapsed(base));
+        applyInline(text.mid(info.calloutEnd), info.calloutEnd, base, false);
+    } else {
+        // No title: the type stands in for it, capitalized ("[!tip]" reads "Tip").
+        setFormat(info.calloutStart, 2, collapsed(base));
+        setFormat(info.calloutEnd - (info.calloutFold ? 2 : 1), info.calloutFold ? 2 : 1, collapsed(base));
+        QTextCharFormat word = base;
+        word.setFontCapitalization(QFont::Capitalize);
+        setFormat(info.calloutStart + 2, int(type.size()), word);
     }
 }
 
@@ -389,7 +490,8 @@ void LivePreviewHighlighter::recheckPreviousBlock(const QString &text)
 
     const QTextBlock beforePrevious = previous.previous();
     const auto state = md::BlockState::decode(beforePrevious.isValid() ? beforePrevious.userState() : -1);
-    const BlockType expected = md::parseLine(toView(previousText), state, toView(text)).info.type;
+    const BlockType expected =
+        md::parseLine(toView(previousText), state, toView(text), previous.blockNumber() == 0).info.type;
     if (expected == blockType(previous))
         return;
 
@@ -446,6 +548,14 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
             if (style & md::Comment) { // stays visible, %% included, so it's clear what won't be published
                 format.setForeground(m_theme->faint);
                 format.setFontItalic(true);
+            }
+            if (style & md::Tag) { // a pill, like Obsidian's
+                format.setForeground(m_theme->accent);
+                format.setBackground(EditorTheme::mix(m_theme->codeBackground, m_theme->accent, 0.14));
+            }
+            if ((style & md::Footnote) && !active) { // the label as a superscript; the brackets collapse
+                format.setForeground(m_theme->accent);
+                format.setVerticalAlignment(QTextCharFormat::AlignSuperScript);
             }
             if ((style & md::Marker) && !(style & md::Comment))
                 format = active ? dimmed(format) : collapsed(format);

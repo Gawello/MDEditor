@@ -99,7 +99,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: MDEditor ${{ env.VERSION }}
-          generate_release_notes: true
+          # Both jobs upload to the same release: only one may write the notes, or they appear twice.
+          generate_release_notes: ${{ runner.os == 'Linux' }}
           files: |
             packages/*.exe
             packages/*.zip

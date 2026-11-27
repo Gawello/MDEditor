@@ -49,6 +49,10 @@ public:
     std::vector<MathGlyph> math; // inline formulas
     QString mathBlock;           // TeX of a display block drawn on this line ($$ ... $$)
     bool mathShown = false;      // the line is laid out to show `mathBlock`
+    QString callout;             // the first line of a callout: its type, lower case
+    // Folding belongs to the view, not the text: kept across re-highlighting, unlike everything above.
+    bool folded = false;
+    bool foldSeen = false; // a callout's "-" (folded by default) has been applied
 };
 
 // Vertical space above and below an image rendered in place of its line.
@@ -71,6 +75,9 @@ QTextBlock tableEnd(QTextBlock block);    // last block of the table containing 
 // The lines of the $$ math block containing `block` (only meaningful when blockType(block) is a math type).
 QTextBlock mathBlockStart(QTextBlock block);
 QTextBlock mathBlockEnd(QTextBlock block);
+QTextBlock frontmatterEnd(QTextBlock block); // the closing line of the frontmatter `block` is in
+// The first line of the callout `block` belongs to, or an invalid block when it isn't in one.
+QTextBlock calloutStart(QTextBlock block);
 
 // Formats Markdown in place: syntax markers are hidden everywhere except in the
 // block containing the cursor (the "active" block), where they are shown dimmed.
@@ -107,6 +114,8 @@ private:
     bool highlightImageLine(const QString &text, BlockData *data, bool active);
     void highlightMathBlock(const QString &text, const md::BlockInfo &info, BlockData *data, bool active);
     void showMath(const QString &text, const md::MathRange &math, int offset);
+    void highlightFrontmatter(const QString &text, md::BlockType type, bool active);
+    void highlightCallout(const QString &text, const md::BlockInfo &info, BlockData *data, bool active);
     QTextCharFormat tallSlot(qreal height) const;
     QTextCharFormat dimmed(QTextCharFormat format) const;
     QTextCharFormat invisible(QTextCharFormat format) const;

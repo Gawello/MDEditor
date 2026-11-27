@@ -7,6 +7,7 @@
 #include "format/CodeFormatters.h"
 #include "format/FormatterRegistry.h"
 #include "markdown/InlineParser.h"
+#include "markdown/NoteScan.h"
 #include "markdown/TableEdit.h"
 
 #include <QApplication>
@@ -27,7 +28,10 @@
 #include <QRegularExpression>
 #include <QScopedValueRollback>
 #include <QTextBlock>
+#include <QAbstractTextDocumentLayout>
+#include <QTextDocument>
 #include <QTextLayout>
+#include <QToolTip>
 #include <QTimer>
 #include <QUrl>
 
@@ -64,7 +68,20 @@ bool isImageFile(const QString &path)
     return formats.contains(QFileInfo(path).suffix().toLower().toLatin1());
 }
 
+MarkdownEditor::LinkResolver &linkResolver()
+{
+    static MarkdownEditor::LinkResolver resolver;
+    return resolver;
+}
+
+constexpr qreal embedMaxHeight = 420;
+
 } // namespace
+
+void MarkdownEditor::setLinkResolver(LinkResolver resolver)
+{
+    linkResolver() = std::move(resolver);
+}
 
 MarkdownEditor::MarkdownEditor(QWidget *parent)
     : QPlainTextEdit(parent)
@@ -108,6 +125,28 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     });
 
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
+
+    // Folds follow edits (a heading typed above a folded one changes its section) once the edit is done.
+    m_foldTimer = new QTimer(this);
+    m_foldTimer->setSingleShot(true);
+    m_foldTimer->setInterval(0);
+    connect(m_foldTimer, &QTimer::timeout, this, &MarkdownEditor::applyFolds);
+    connect(document(), &QTextDocument::contentsChanged, m_foldTimer, qOverload<>(&QTimer::start));
+    // The cursor can't stay in hidden text (search, undo, Ctrl+End): unfold around it.
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
+        const QTextBlock block = textCursor().block();
+        // The visible line above a hidden run is the fold hiding it; nested folds take another round.
+        for (int round = 0; !block.isVisible() && round < 64; ++round) {
+            QTextBlock header = block.previous();
+            while (header.isValid() && !header.isVisible())
+                header = header.previous();
+            auto *data = header.isValid() ? static_cast<BlockData *>(header.userData()) : nullptr;
+            if (!data || !data->folded)
+                break;
+            data->folded = false;
+            applyFolds();
+        }
+    });
 
     applyTheme();
     document()->setModified(false); // setDocumentMargin() counts as a modification
@@ -253,6 +292,18 @@ bool MarkdownEditor::event(QEvent *event)
             return false;
         }
     }
+    // Footnote references show their text when hovered.
+    if (event->type() == QEvent::ToolTip && m_markdown) {
+        const auto *help = static_cast<QHelpEvent *>(event);
+        const QPoint pos = viewport()->mapFrom(this, help->pos());
+        if (const auto footnote = footnoteAt(pos)) {
+            QToolTip::showText(help->globalPos(), footnote->first, this);
+            return true;
+        }
+        QToolTip::hideText();
+        event->ignore();
+        return true;
+    }
     return QPlainTextEdit::event(event);
 }
 
@@ -278,7 +329,16 @@ void MarkdownEditor::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && m_markdown) {
         const QPoint pos = event->position().toPoint();
+        if (const QTextBlock block = foldableBlockAt(pos); block.isValid()) {
+            toggleFold(block);
+            return;
+        }
         if (event->modifiers() & Qt::ControlModifier) {
+            if (const auto footnote = footnoteAt(pos); footnote && footnote->second.isValid()) {
+                setTextCursor(QTextCursor(footnote->second));
+                centerCursor();
+                return;
+            }
             if (const auto target = linkTargetAt(pos)) {
                 openLink(*target);
                 return;
@@ -321,6 +381,17 @@ void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
 void MarkdownEditor::mouseMoveEvent(QMouseEvent *event)
 {
     QPlainTextEdit::mouseMoveEvent(event);
+    if (m_markdown) {
+        const int hover = cursorForPosition(event->position().toPoint()).blockNumber();
+        if (hover != m_hoverBlock) {
+            m_hoverBlock = hover;
+            viewport()->update();
+        }
+        if (foldableBlockAt(event->position().toPoint()).isValid()) {
+            viewport()->setCursor(Qt::PointingHandCursor);
+            return;
+        }
+    }
     const bool overLink = m_markdown && (event->modifiers() & Qt::ControlModifier)
         && linkTargetAt(event->position().toPoint()).has_value();
     viewport()->setCursor(overLink ? Qt::PointingHandCursor : Qt::IBeamCursor);
@@ -345,12 +416,13 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
             if (r.top() > area.bottom())
                 break;
             const auto *data = static_cast<BlockData *>(block.userData());
-            if (data && block.isVisible() && isCode(data->info.type)) {
+            if (data && block.isVisible() && (isCode(data->info.type) || md::isFrontmatterType(data->info.type))) {
                 painter.fillRect(QRectF(offset.x() + margin - 6, r.top(), viewport()->width() - 2 * margin + 12,
                                         r.height()),
                                  m_theme.codeBackground);
             }
         }
+        paintBoxes(painter, area);
     }
 
     QPlainTextEdit::paintEvent(event);
@@ -375,14 +447,19 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
             skipUntil = tableEnd(block).blockNumber();
             continue;
         }
-        if (block.blockNumber() == activeBlock)
+        if (block.blockNumber() == activeBlock) {
+            paintFolds(painter, block, r);
             continue;
+        }
         const md::BlockInfo &info = data->info;
+        paintFolds(painter, block, r);
         paintEntities(painter, block, *data);
         paintMath(painter, block, *data);
 
         switch (info.type) {
         case BlockType::Quote: {
+            if (calloutStart(block).isValid())
+                break; // the callout's box has its own bar
             const QRectF c = characterRect(block, info.markerStart);
             painter.fillRect(QRectF(c.left(), r.top(), 3, r.height()), m_theme.quoteBar);
             break;
@@ -638,8 +715,11 @@ MarkdownEditor::CachedImage *MarkdownEditor::cachedImage(const QString &target) 
 QSizeF MarkdownEditor::imageDisplaySize(const QString &target, int requestedWidth) const
 {
     const CachedImage *cached = cachedImage(target);
-    if (!cached)
+    if (!cached) {
+        if (const Embed *note = embed(target))
+            return {note->width, note->height};
         return {};
+    }
     const QSizeF natural = cached->image.size();
     const qreal available = viewport()->width() - 2 * document()->documentMargin();
     const qreal width = std::min<qreal>(requestedWidth > 0 ? requestedWidth : natural.width(), available);
@@ -652,8 +732,13 @@ void MarkdownEditor::paintImage(QPainter &painter, const QTextBlock &block, cons
                                 int requestedWidth) const
 {
     CachedImage *cached = cachedImage(target);
+    if (!cached) {
+        if (const Embed *note = embed(target))
+            paintEmbed(painter, block, *note);
+        return;
+    }
     const QSizeF size = imageDisplaySize(target, requestedWidth);
-    if (!cached || size.isEmpty())
+    if (size.isEmpty())
         return;
 
     const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
@@ -706,7 +791,7 @@ md::BlockInfo MarkdownEditor::blockInfo(const QTextBlock &block) const
     const auto state = md::BlockState::decode(block.previous().isValid() ? block.previous().userState() : -1);
     const QString nextText = block.next().isValid() ? block.next().text() : QString();
     const auto nextLine = block.next().isValid() ? std::optional(toView(nextText)) : std::nullopt;
-    return md::parseLine(toView(block.text()), state, nextLine).info;
+    return md::parseLine(toView(block.text()), state, nextLine, block.blockNumber() == 0).info;
 }
 
 void MarkdownEditor::paintEntities(QPainter &painter, const QTextBlock &block, const BlockData &data) const
@@ -883,7 +968,9 @@ void MarkdownEditor::openLink(const QString &target)
         return;
     }
 
-    const QString path = resolvePath(target);
+    QString path = resolveLink(target, true);
+    if (path.isEmpty())
+        path = resolvePath(target);
     if (path.isEmpty())
         return;
 
@@ -1902,7 +1989,7 @@ void MarkdownEditor::addFormatActions(QMenu *menu, const EditorGetter &target, b
         {QT_TR_NOOP("&Highlight"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_H), "=="},
         {QT_TR_NOOP("Inline &Code"), QKeySequence(Qt::CTRL | Qt::Key_QuoteLeft), "`"},
         {QT_TR_NOOP("&Math"), QKeySequence(), "$"},
-        {QT_TR_NOOP("Comme&nt"), QKeySequence(), "%%"},
+        {QT_TR_NOOP("Comm&ent"), QKeySequence(), "%%"},
     };
     for (const auto &wrap : wraps) {
         const QString marker = QString::fromLatin1(wrap.marker);
@@ -1915,7 +2002,7 @@ void MarkdownEditor::addFormatActions(QMenu *menu, const EditorGetter &target, b
         });
     }
     menu->addSeparator();
-    connect(menu->addAction(tr("C&lear Formatting")), &QAction::triggered, menu, [target] {
+    connect(menu->addAction(tr("Clear &Formatting")), &QAction::triggered, menu, [target] {
         if (MarkdownEditor *editor = target())
             editor->clearFormatting();
     });
@@ -2008,6 +2095,7 @@ void MarkdownEditor::addInsertActions(QMenu *menu, const EditorGetter &target)
     add(tr("&Footnote"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::Footnote); });
     menu->addSeparator();
     add(tr("&Symbol or Emoji…"), [](MarkdownEditor *editor) { emit editor->insertSymbolRequested(); });
+    add(tr("Tem&plate…"), [](MarkdownEditor *editor) { emit editor->insertTemplateRequested(); });
 }
 
 void MarkdownEditor::addTableActions(QMenu *menu)
@@ -2164,4 +2252,402 @@ std::unique_ptr<QMenu> MarkdownEditor::createContextMenu(const QPoint &pos)
                         [this] { formatDocument(); });
     }
     return menu;
+}
+
+// --- Folding ------------------------------------------------------------------------------------------
+
+bool MarkdownEditor::isFoldable(const QTextBlock &block) const
+{
+    if (!m_markdown || !block.isValid())
+        return false;
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    const QTextBlock next = block.next();
+    if (!data || !next.isValid())
+        return false;
+    const md::BlockInfo &info = data->info;
+    const auto *nextData = static_cast<const BlockData *>(next.userData());
+    if (!nextData)
+        return false;
+    const md::BlockInfo &after = nextData->info;
+    if (info.type == BlockType::Heading)
+        return !(after.type == BlockType::Heading && after.headingLevel <= info.headingLevel);
+    if (info.isList())
+        return after.type != BlockType::Blank && after.indent > info.indent && after.type != BlockType::Heading;
+    if (info.type == BlockType::Quote && info.calloutStart >= 0)
+        return after.type == BlockType::Quote && after.calloutStart < 0;
+    return false;
+}
+
+bool MarkdownEditor::isFolded(const QTextBlock &block) const
+{
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    return data && data->folded && isFoldable(block);
+}
+
+bool MarkdownEditor::toggleFold(const QTextBlock &block)
+{
+    if (!isFoldable(block))
+        return false;
+    auto *data = static_cast<BlockData *>(block.userData());
+    data->folded = !data->folded;
+    applyFolds();
+    if (!textCursor().block().isVisible()) { // the cursor was in what's now hidden: put it on the fold
+        QTextCursor cursor(block);
+        cursor.movePosition(QTextCursor::EndOfBlock);
+        setTextCursor(cursor);
+    }
+    viewport()->update();
+    return true;
+}
+
+bool MarkdownEditor::toggleFoldAtCursor()
+{
+    const QTextBlock current = textCursor().block();
+    if (toggleFold(current))
+        return true;
+    for (QTextBlock block = current.previous(); block.isValid(); block = block.previous()) {
+        if (blockType(block) == BlockType::Heading)
+            return toggleFold(block);
+    }
+    return false;
+}
+
+void MarkdownEditor::setAllFolded(bool folded)
+{
+    for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
+        auto *data = static_cast<BlockData *>(block.userData());
+        if (!data)
+            continue;
+        if (!folded)
+            data->folded = false;
+        else if (data->info.type == BlockType::Heading && isFoldable(block))
+            data->folded = true;
+    }
+    applyFolds();
+    if (!textCursor().block().isVisible())
+        moveCursor(QTextCursor::Start);
+    viewport()->update();
+}
+
+// Hides what folded lines fold away and shows everything else; only blocks whose visibility changes are
+// laid out again.
+void MarkdownEditor::applyFolds()
+{
+    std::vector<md::BlockInfo> infos;
+    std::vector<QTextBlock> blocks;
+    bool anyFolded = false;
+    for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next()) {
+        const auto *data = static_cast<const BlockData *>(block.userData());
+        infos.push_back(data ? data->info : md::BlockInfo{});
+        blocks.push_back(block);
+        anyFolded = anyFolded || (data && data->folded);
+    }
+    std::vector<char> hidden(blocks.size(), 0);
+    if (m_markdown && anyFolded) {
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            const auto *data = static_cast<const BlockData *>(blocks[i].userData());
+            if (!data || !data->folded || hidden[i])
+                continue;
+            const int end = md::foldEnd(infos, int(i));
+            for (int j = int(i) + 1; j <= end; ++j)
+                hidden[size_t(j)] = 1;
+        }
+    }
+    bool changed = false;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        QTextBlock block = blocks[i];
+        const bool visible = !hidden[i];
+        if (block.isVisible() == visible)
+            continue;
+        block.setVisible(visible);
+        block.setLineCount(visible ? std::max(1, block.layout() ? block.layout()->lineCount() : 1) : 0);
+        document()->markContentsDirty(block.position(), block.length());
+        changed = true;
+    }
+    if (changed)
+        viewport()->update(); // the layout updates the scroll range itself
+}
+
+// The fold marker left of a foldable line's text.
+QRectF MarkdownEditor::foldMarkerRect(const QTextBlock &block) const
+{
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    if (!data)
+        return {};
+    const QTextLayout *layout = block.layout();
+    if (!layout || layout->lineCount() == 0)
+        return {};
+    const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
+    const QTextLine first = layout->lineAt(0);
+    const qreal left = data->info.isList() ? characterRect(block, data->info.indent).left()
+                                           : contentOffset().x() + document()->documentMargin();
+    const qreal side = 10;
+    return QRectF(left - side - 4, r.top() + layout->position().y() + first.y() + (first.height() - side) / 2, side,
+                  side);
+}
+
+QTextBlock MarkdownEditor::foldableBlockAt(const QPoint &pos) const
+{
+    if (!m_markdown)
+        return {};
+    const QTextBlock block = cursorForPosition(pos).block();
+    if (!isFoldable(block))
+        return {};
+    const QRectF marker = foldMarkerRect(block);
+    return marker.adjusted(-4, -4, 4, 4).contains(pos) ? block : QTextBlock();
+}
+
+// A chevron on foldable lines (on the hovered or folded ones only, like Obsidian), and "…" after a fold.
+void MarkdownEditor::paintFolds(QPainter &painter, const QTextBlock &block, const QRectF &rect) const
+{
+    Q_UNUSED(rect);
+    const bool folded = isFolded(block);
+    if (!folded && block.blockNumber() != m_hoverBlock)
+        return;
+    if (!isFoldable(block))
+        return;
+    const QRectF box = foldMarkerRect(block);
+    if (box.isEmpty())
+        return;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(m_theme.faint, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    QPainterPath chevron;
+    const QPointF c = box.center();
+    const qreal h = box.width() * 0.28;
+    if (folded) { // ›
+        chevron.moveTo(c.x() - h * 0.6, c.y() - h * 1.2);
+        chevron.lineTo(c.x() + h * 0.6, c.y());
+        chevron.lineTo(c.x() - h * 0.6, c.y() + h * 1.2);
+    } else { // ⌄
+        chevron.moveTo(c.x() - h * 1.2, c.y() - h * 0.6);
+        chevron.lineTo(c.x(), c.y() + h * 0.6);
+        chevron.lineTo(c.x() + h * 1.2, c.y() - h * 0.6);
+    }
+    painter.drawPath(chevron);
+
+    if (folded) { // a small "…" pill after the line
+        const QTextLayout *layout = block.layout();
+        const QTextLine last = layout->lineAt(layout->lineCount() - 1);
+        const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
+        const qreal x = r.left() + layout->position().x() + last.naturalTextRect().right() + 8;
+        const qreal y = r.top() + layout->position().y() + last.y();
+        const QFontMetricsF metrics(font());
+        const QString dots = QStringLiteral("…");
+        const QRectF pill(x, y + (last.height() - metrics.height()) / 2, metrics.horizontalAdvance(dots) + 12,
+                          metrics.height());
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(m_theme.codeBackground);
+        painter.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2);
+        painter.setPen(m_theme.faint);
+        painter.setFont(font());
+        painter.drawText(pill, Qt::AlignCenter, dots);
+    }
+    painter.restore();
+}
+
+// Callout boxes (tinted, with a colored bar) under the text.
+void MarkdownEditor::paintBoxes(QPainter &painter, const QRect &area)
+{
+    const QPointF offset = contentOffset();
+    const qreal margin = document()->documentMargin();
+    QTextBlock block = firstVisibleBlock();
+    // A callout that started above the first visible line still gets its box.
+    if (QTextBlock start = calloutStart(block); start.isValid())
+        block = start;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    while (block.isValid()) {
+        const QRectF r = blockBoundingGeometry(block).translated(offset);
+        if (r.top() > area.bottom())
+            break;
+        const auto *data = static_cast<const BlockData *>(block.userData());
+        if (!data || data->info.type != BlockType::Quote || data->info.calloutStart < 0 || !block.isVisible()) {
+            block = block.next();
+            continue;
+        }
+        QTextBlock last = block;
+        for (QTextBlock next = block.next(); next.isValid() && blockType(next) == BlockType::Quote; next = next.next()) {
+            const auto *nextData = static_cast<const BlockData *>(next.userData());
+            if (nextData && nextData->info.calloutStart >= 0)
+                break;
+            last = next;
+        }
+        QRectF box = r;
+        for (QTextBlock b = block; b.isValid(); b = b.next()) {
+            if (b.isVisible())
+                box = box.united(blockBoundingGeometry(b).translated(offset));
+            if (b == last)
+                break;
+        }
+        const QRectF c = characterRect(block, data->info.markerStart);
+        box.setLeft(c.isValid() ? c.left() : offset.x() + margin);
+        box.setRight(offset.x() + viewport()->width() - margin + 6);
+        box.adjust(0, 2, 0, -2);
+        const QColor color = EditorTheme::calloutColor(data->callout);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(EditorTheme::mix(palette().color(QPalette::Base), color, 0.10));
+        painter.drawRoundedRect(box, 5, 5);
+        painter.setBrush(color);
+        painter.drawRoundedRect(QRectF(box.left(), box.top(), 3, box.height()), 1.5, 1.5);
+        block = last.next();
+    }
+    painter.restore();
+}
+
+// --- Links, embeds, footnotes ---------------------------------------------------------------------------
+
+QString MarkdownEditor::resolveLink(const QString &target, bool wiki) const
+{
+    if (QUrl(target).scheme().size() > 1)
+        return {};
+    if (const LinkResolver &resolver = linkResolver()) {
+        const QString from = m_documentPath.isEmpty() ? QDir(m_baseDirectory).filePath(QStringLiteral("untitled.md"))
+                                                      : m_documentPath;
+        return resolver(target.section(u'#', 0, 0), wiki, from);
+    }
+    return {};
+}
+
+const MarkdownEditor::Embed *MarkdownEditor::embed(const QString &target) const
+{
+    QString path = resolveLink(target, true);
+    if (path.isEmpty()) {
+        const QString relative = resolvePath(target);
+        path = QFileInfo(relative).suffix().isEmpty() ? relative + QStringLiteral(".md") : relative;
+    }
+    if (path.isEmpty() || !isMarkdownFile(path))
+        return nullptr;
+    const QFileInfo info(path);
+    if (!info.isFile() || info.size() > 2 * 1024 * 1024 || QFileInfo(path) == QFileInfo(m_documentPath))
+        return nullptr; // missing, huge, or this note itself
+    const QString anchor = target.section(u'#', 1);
+    const qreal width = viewport()->width() - 2 * document()->documentMargin();
+    if (width < 80)
+        return nullptr;
+    m_hasImages = true; // re-laid out when the width changes, like images
+    const QString key = path + u'#' + anchor;
+    auto it = m_embeds.find(key);
+    if (it != m_embeds.end() && it->modified == info.lastModified() && qFuzzyCompare(it->width, width))
+        return &it.value();
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return nullptr;
+    const QString text = QString::fromUtf8(file.readAll());
+    const md::NoteScan scan = md::scanNote(toView(text));
+    QStringList lines = text.split(u'\n');
+    int first = scan.frontmatterEnd + 1;
+    int last = int(lines.size()) - 1;
+    if (!anchor.isEmpty()) { // ![[Note#Heading]]: that section only
+        for (size_t i = 0; i < scan.headings.size(); ++i) {
+            const md::Heading &heading = scan.headings[i];
+            if (QString::fromStdU16String(heading.text).compare(anchor.trimmed(), Qt::CaseInsensitive) != 0)
+                continue;
+            first = heading.line;
+            for (size_t j = i + 1; j < scan.headings.size(); ++j) {
+                if (scan.headings[j].level <= heading.level) {
+                    last = scan.headings[j].line - 1;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+    const QString content = lines.mid(first, last - first + 1).join(u'\n');
+
+    Embed result;
+    result.modified = info.lastModified();
+    result.width = width;
+    result.title = anchor.isEmpty() ? info.completeBaseName() : info.completeBaseName() + QStringLiteral(" › ") + anchor;
+    result.document = std::make_shared<QTextDocument>();
+    result.document->setDefaultFont(font());
+    result.document->setDocumentMargin(0);
+    result.document->setMarkdown(content, QTextDocument::MarkdownDialectGitHub);
+    result.document->setTextWidth(width - 32);
+    const qreal title = QFontMetricsF(font()).height() + 10;
+    const qreal body = result.document->size().height();
+    result.clipped = body > embedMaxHeight;
+    result.height = title + std::min(body, embedMaxHeight) + 20;
+    it = m_embeds.insert(key, result);
+    return &it.value();
+}
+
+void MarkdownEditor::paintEmbed(QPainter &painter, const QTextBlock &block, const Embed &embed) const
+{
+    const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
+    const QRectF box(contentOffset().x() + document()->documentMargin(), r.top() + imageVerticalPadding, embed.width,
+                     embed.height);
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(m_theme.rule, 1));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+    painter.fillRect(QRectF(box.left(), box.top() + 6, 3, box.height() - 12), m_theme.accent);
+
+    const QFontMetricsF metrics(font());
+    QFont titleFont = font();
+    titleFont.setBold(true);
+    painter.setFont(titleFont);
+    painter.setPen(m_theme.faint);
+    painter.drawText(QRectF(box.left() + 16, box.top() + 8, box.width() - 32, metrics.height()),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     metrics.elidedText(embed.title, Qt::ElideMiddle, box.width() - 32));
+
+    const QRectF body(box.left() + 16, box.top() + metrics.height() + 14, box.width() - 32,
+                      box.height() - metrics.height() - 24);
+    painter.translate(body.topLeft());
+    QAbstractTextDocumentLayout::PaintContext context;
+    context.palette = palette();
+    context.palette.setColor(QPalette::Text, m_theme.text);
+    context.clip = QRectF(0, 0, body.width(), body.height());
+    painter.setClipRect(context.clip);
+    embed.document->documentLayout()->draw(&painter, context);
+    painter.restore();
+
+    if (embed.clipped) { // fades out at the bottom: the note goes on
+        QLinearGradient fade(0, body.bottom() - 30, 0, body.bottom());
+        QColor base = palette().color(QPalette::Base);
+        base.setAlpha(0);
+        fade.setColorAt(0, base);
+        base.setAlpha(255);
+        fade.setColorAt(1, base);
+        painter.fillRect(QRectF(body.left(), body.bottom() - 30, body.width(), 30), fade);
+    }
+}
+
+std::optional<std::pair<QString, QTextBlock>> MarkdownEditor::footnoteAt(const QPoint &pos) const
+{
+    const QTextCursor hit = cursorForPosition(pos);
+    const QTextBlock block = hit.block();
+    const md::BlockInfo info = blockInfo(block);
+    if (isCode(info.type) || info.type == BlockType::Blank || md::isTableType(info.type))
+        return std::nullopt;
+    const QString content = block.text().mid(info.contentStart);
+    const md::InlineResult parsed = md::parseInline(toView(content));
+    const int local = hit.positionInBlock() - info.contentStart;
+    for (const md::FootnoteRange &footnote : parsed.footnotes) {
+        if (footnote.definition || local < footnote.start || local > footnote.end)
+            continue;
+        // Only when the mouse is really over it, not anywhere on the rest of the line.
+        const QRectF first = characterRect(block, info.contentStart + footnote.start);
+        const QRectF last = characterRect(block, info.contentStart + footnote.end - 1);
+        if (!first.united(last).adjusted(-3, -3, 3, 3).contains(pos))
+            continue;
+        const QString label = content.mid(footnote.labelStart, footnote.labelEnd - footnote.labelStart);
+        const QString prefix = QStringLiteral("[^%1]:").arg(label);
+        for (QTextBlock b = document()->firstBlock(); b.isValid(); b = b.next()) {
+            const QString text = b.text().trimmed();
+            if (!text.startsWith(prefix))
+                continue;
+            // The definition and its indented continuation lines.
+            QStringList lines{text.mid(prefix.size()).trimmed()};
+            for (QTextBlock more = b.next(); more.isValid() && more.text().startsWith(QStringLiteral("    ")); more = more.next())
+                lines << more.text().trimmed();
+            return std::pair{lines.join(u' '), b};
+        }
+        return std::pair{tr("Footnote [^%1] has no definition.").arg(label), QTextBlock()};
+    }
+    return std::nullopt;
 }

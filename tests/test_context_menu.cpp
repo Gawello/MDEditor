@@ -2,6 +2,7 @@
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
 #include "app/FileActions.h"
+#include "app/MainWindow.h"
 #include "document/Document.h"
 #include "editor/MarkdownEditor.h"
 
@@ -11,6 +12,7 @@
 #include <QFile>
 #include <QKeyEvent>
 #include <QMap>
+#include <QMenuBar>
 #include <QMenu>
 #include <QTemporaryDir>
 #include <QTextBlock>
@@ -335,4 +337,17 @@ TEST_CASE(f2_is_left_to_the_window)
     QKeyEvent override(QEvent::ShortcutOverride, Qt::Key_F2, Qt::NoModifier);
     QApplication::sendEvent(&editor, &override);
     CHECK(!override.isAccepted());
+}
+
+TEST_CASE(main_menu_mnemonics_are_unique)
+{
+    MainWindow window;
+    QMap<QChar, QString> menus;
+    for (QAction *action : window.menuBar()->actions()) {
+        const QChar key = mnemonic(action->text());
+        CHECK(!key.isNull() && !menus.contains(key));
+        menus.insert(key, action->text());
+        if (action->menu())
+            checkMnemonics(action->menu());
+    }
 }

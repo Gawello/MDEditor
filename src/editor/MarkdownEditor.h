@@ -96,6 +96,18 @@ public:
     static QKeySequence prettifyShortcut();
     static QKeySequence prettifyDocumentShortcut();
 
+    // Folding (Markdown mode): headings hide their section, list items their children, callouts their body.
+    bool isFoldable(const QTextBlock &block) const;
+    bool toggleFold(const QTextBlock &block); // false if nothing to fold there
+    bool toggleFoldAtCursor();                // the line of the cursor, or the heading above it
+    void setAllFolded(bool folded);           // every heading (folding) or everything (unfolding)
+    bool isFolded(const QTextBlock &block) const;
+
+    // How [[links]] find their files (the main window resolves them in the open folder). Without one, links
+    // are relative to the note.
+    using LinkResolver = std::function<QString(const QString &target, bool wiki, const QString &from)>;
+    static void setLinkResolver(LinkResolver resolver);
+
 signals:
     void openFileRequested(const QString &path);
     void filesDropped(const QStringList &paths);
@@ -104,6 +116,7 @@ signals:
     // The editor has no table picker or symbol picker of its own: the main window shows them.
     void insertTableRequested(const QPoint &globalPos);
     void insertSymbolRequested();
+    void insertTemplateRequested(); // the main window knows the templates folder
 
 protected:
     bool event(QEvent *event) override;
@@ -185,6 +198,25 @@ private:
     std::optional<QString> linkTargetAt(const QPoint &pos) const;
     void openLink(const QString &target);
     bool toggleTaskAt(const QPoint &pos);
+    void applyFolds();
+    QRectF foldMarkerRect(const QTextBlock &block) const;
+    QTextBlock foldableBlockAt(const QPoint &pos) const; // a fold marker under `pos`
+    void paintFolds(QPainter &painter, const QTextBlock &block, const QRectF &rect) const;
+    void paintBoxes(QPainter &painter, const QRect &area);
+    QString resolveLink(const QString &target, bool wiki) const;
+    // ![[Note]] / ![[Note#Heading]]: the note rendered in a box, cached by file, date, section and width.
+    struct Embed {
+        QDateTime modified;
+        qreal width = 0;
+        QString title;
+        std::shared_ptr<QTextDocument> document;
+        qreal height = 0;    // of the box
+        bool clipped = false; // the note is longer than the box
+    };
+    const Embed *embed(const QString &target) const;
+    void paintEmbed(QPainter &painter, const QTextBlock &block, const Embed &embed) const;
+    // The footnote reference at `pos` and its definition's text, if any.
+    std::optional<std::pair<QString, QTextBlock>> footnoteAt(const QPoint &pos) const;
 
     EditorTheme m_theme;
     LivePreviewHighlighter *m_highlighter = nullptr;
@@ -198,4 +230,7 @@ private:
     int m_layoutWidth = 0;
     std::optional<QTextCursor> m_batchCursor; // set while formatDocument edits
     QTimer *m_imageRelayout = nullptr;
+    QTimer *m_foldTimer = nullptr;
+    int m_hoverBlock = -1; // fold markers show on the line under the mouse
+    mutable QHash<QString, Embed> m_embeds;
 };

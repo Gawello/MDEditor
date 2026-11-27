@@ -29,6 +29,11 @@ public:
     static constexpr auto driveConnectOnStartKey = "drive/connectOnStart";
     static constexpr auto driveRclonePathKey = "drive/rclonePath"; // empty: rclone from PATH
     static constexpr auto driveMountPidKey = "drive/mountPid";
+    // Daily notes and templates; folders are relative to the open folder.
+    static constexpr auto dailyFolderKey = "notes/dailyFolder";
+    static constexpr auto dailyFormatKey = "notes/dailyFormat";     // moment.js tokens, like Obsidian
+    static constexpr auto dailyTemplateKey = "notes/dailyTemplate"; // a note used as the template
+    static constexpr auto templatesFolderKey = "notes/templatesFolder";
     static constexpr auto checkUpdatesOnStartKey = "updates/checkOnStart";
     static constexpr auto lastUpdateCheckKey = "updates/lastCheck"; // UTC
     static constexpr auto skippedUpdateKey = "updates/skippedVersion";
@@ -42,6 +47,10 @@ public:
     // For files that aren't valid UTF-8 and have no byte order mark.
     QString fallbackEncoding() const;
     bool formatOnSave() const { return value(formatOnSaveKey, false).toBool(); }
+    QString dailyFolder() const { return value(dailyFolderKey).toString(); }
+    QString dailyFormat() const { return value(dailyFormatKey, QStringLiteral("YYYY-MM-DD")).toString(); }
+    QString dailyTemplate() const { return value(dailyTemplateKey).toString(); }
+    QString templatesFolder() const { return value(templatesFolderKey, QStringLiteral("templates")).toString(); }
     bool checkUpdatesOnStart() const { return value(checkUpdatesOnStartKey, false).toBool(); } // off: asks GitHub
     QStringList enabledPlugins() const { return value(enabledPluginsKey).toStringList(); }
 

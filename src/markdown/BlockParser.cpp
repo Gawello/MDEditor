@@ -39,13 +39,15 @@ int skipWs(std::u16string_view s, int from)
 } // namespace
 
 // Fences encode as (code << 16) | (length << 2) | tilde bit, i.e. even values >= 12; table states use 1 and 3;
-// math and comment blocks 5 and 7.
+// math, comment and frontmatter blocks 5, 7 and 9.
 int BlockState::encode() const
 {
     if (block == Block::Math)
         return 5;
     if (block == Block::Comment)
         return 7;
+    if (block == Block::Frontmatter)
+        return 9;
     if (inFence())
         return ((code & 0x7fff) << 16) | (std::min(fenceLength, 0x3fff) << 2) | (fenceChar == u'~' ? 2 : 0);
     if (table == Table::AfterHeader)
@@ -63,15 +65,16 @@ BlockState BlockState::decode(int state)
         return {0, 0, Table::AfterHeader};
     if (state == 3)
         return {0, 0, Table::Body};
-    if (state == 5 || state == 7) {
+    if (state == 5 || state == 7 || state == 9) {
         BlockState s;
-        s.block = state == 5 ? Block::Math : Block::Comment;
+        s.block = state == 5 ? Block::Math : state == 7 ? Block::Comment : Block::Frontmatter;
         return s;
     }
     return {(state & 2) ? u'~' : u'`', (state & 0xffff) >> 2, Table::None, state >> 16};
 }
 
-LineResult parseLine(std::u16string_view line, BlockState state, std::optional<std::u16string_view> nextLine)
+LineResult parseLine(std::u16string_view line, BlockState state, std::optional<std::u16string_view> nextLine,
+                     bool firstLine)
 {
     LineResult r;
     r.next = state;
@@ -81,6 +84,35 @@ LineResult parseLine(std::u16string_view line, BlockState state, std::optional<s
     b.indent = ind;
     b.markerStart = ind;
     b.contentStart = ind;
+
+    // YAML frontmatter: "---" on the very first line, up to the next "---" or "...".
+    const auto trimmedEnd = [&] {
+        size_t end = line.size();
+        while (end > 0 && isWs(line[end - 1]))
+            --end;
+        return line.substr(0, end);
+    };
+    if (firstLine && trimmedEnd() == u"---") {
+        b.type = BlockType::FrontmatterOpen;
+        b.markerLength = 3;
+        b.contentStart = n;
+        r.next = {};
+        r.next.block = BlockState::Block::Frontmatter;
+        return r;
+    }
+    if (state.block == BlockState::Block::Frontmatter) {
+        b.markerStart = 0;
+        b.contentStart = 0;
+        if (trimmedEnd() == u"---" || trimmedEnd() == u"...") {
+            b.type = BlockType::FrontmatterClose;
+            b.markerLength = n;
+            b.contentStart = n;
+            r.next.block = BlockState::Block::None;
+        } else {
+            b.type = BlockType::FrontmatterLine;
+        }
+        return r;
+    }
 
     if (state.table == BlockState::Table::AfterHeader && parseDelimiterRow(line)) {
         b.type = BlockType::TableDelimiter;
@@ -226,6 +258,20 @@ LineResult parseLine(std::u16string_view line, BlockState state, std::optional<s
             b.type = BlockType::Quote;
             b.markerLength = p - ind;
             b.contentStart = p;
+            // "[!type]" (letters, digits, '-', '_') with an optional fold sign: a callout's first line.
+            if (p + 3 < n && line[p] == u'[' && line[p + 1] == u'!') {
+                int q = p + 2;
+                while (q < n && (isDigit(line[q]) || (line[q] >= u'a' && line[q] <= u'z')
+                                 || (line[q] >= u'A' && line[q] <= u'Z') || line[q] == u'-' || line[q] == u'_'))
+                    ++q;
+                if (q > p + 2 && q < n && line[q] == u']') {
+                    ++q;
+                    if (q < n && (line[q] == u'+' || line[q] == u'-'))
+                        b.calloutFold = line[q++];
+                    b.calloutStart = p;
+                    b.calloutEnd = q;
+                }
+            }
             return r;
         }
     }

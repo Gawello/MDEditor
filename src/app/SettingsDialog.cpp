@@ -6,12 +6,14 @@
 #include "document/Encodings.h"
 #include "spell/SpellChecker.h"
 #include "format/FormatterRegistry.h"
+#include "notes/Templates.h"
 #include "plugins/PluginManager.h"
 #include "theme/ThemeManager.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -91,6 +93,7 @@ SettingsDialog::SettingsDialog(CloudDrive *drive, QWidget *parent)
     addPage(tr("Appearance"), createAppearancePage());
     addPage(tr("Editor"), createEditorPage());
     addPage(tr("Formatting"), createFormattingPage());
+    addPage(tr("Notes"), createNotesPage());
     addPage(tr("Google Drive"), new CloudDrivePage(drive));
     addPage(tr("Plugins"), createPluginsPage());
     addPage(tr("Updates"), createUpdatesPage());
@@ -121,6 +124,52 @@ void SettingsDialog::showPage(const QString &title)
         if (m_sections->item(i)->data(Qt::UserRole).toString() == title)
             m_sections->setCurrentRow(i);
     }
+}
+
+QWidget *SettingsDialog::createNotesPage()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->addWidget(heading(tr("Daily notes")));
+    auto *form = new QFormLayout;
+    const auto field = [&](const char *key, const QString &value, const QString &placeholder) {
+        auto *edit = new QLineEdit(value, page);
+        edit->setPlaceholderText(placeholder);
+        const QString name = QString::fromLatin1(key);
+        connect(edit, &QLineEdit::editingFinished, this,
+                [edit, name] { AppSettings::instance().setValue(name, edit->text().trimmed()); });
+        return edit;
+    };
+    AppSettings &settings = AppSettings::instance();
+    form->addRow(tr("Folder"), field(AppSettings::dailyFolderKey, settings.dailyFolder(), tr("the open folder")));
+    QLineEdit *format = field(AppSettings::dailyFormatKey, settings.dailyFormat(), QStringLiteral("YYYY-MM-DD"));
+    auto *preview = new QLabel(page);
+    preview->setForegroundRole(QPalette::PlaceholderText);
+    const auto updatePreview = [format, preview] {
+        const QString pattern = format->text().trimmed().isEmpty() ? QStringLiteral("YYYY-MM-DD") : format->text();
+        preview->setText(tr("Today: %1.md").arg(Templates::formatDate(QDateTime::currentDateTime(), pattern)));
+    };
+    connect(format, &QLineEdit::textChanged, this, updatePreview);
+    updatePreview();
+    form->addRow(tr("Date format"), format);
+    form->addRow(QString(), preview);
+    form->addRow(tr("Template"), field(AppSettings::dailyTemplateKey, settings.dailyTemplate(),
+                                       tr("none, e.g. templates/Daily.md")));
+    layout->addLayout(form);
+    layout->addWidget(hint(tr("File → Open Today's Note (Ctrl+Shift+D) opens the note for today, creating it from the "
+                              "template if needed. Formats use Obsidian's tokens: YYYY, MM, DD, dddd, HH, mm; text in "
+                              "[brackets] is kept as is.")));
+
+    layout->addWidget(heading(tr("Templates")));
+    auto *templates = new QFormLayout;
+    templates->addRow(tr("Templates folder"),
+                      field(AppSettings::templatesFolderKey, settings.templatesFolder(), QStringLiteral("templates")));
+    layout->addLayout(templates);
+    layout->addWidget(hint(tr("Format → Insert → Template… inserts a note from this folder at the cursor. "
+                              "{{title}}, {{date}} and {{time}} are filled in, also with a format: "
+                              "{{date:dddd, D MMMM YYYY}}. Folders are relative to the open folder.")));
+    layout->addStretch();
+    return page;
 }
 
 QWidget *SettingsDialog::createUpdatesPage()

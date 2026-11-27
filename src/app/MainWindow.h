@@ -15,6 +15,13 @@ class CloudDrive;
 class SettingsDialog;
 class SymbolPicker;
 class UpdateController;
+class NoteIndex;
+class OutlinePanel;
+class QLabel;
+class SearchPanel;
+class SideBar;
+class TagPanel;
+class GraphView;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -94,6 +101,19 @@ private:
     void updateMarkdownActions();
     void updateEncodingButton();
     void populateEncodingMenu(QMenu *menu);
+    // Obsidian's navigation: quick switcher (Ctrl+O), command palette (Ctrl+P), the right sidebar.
+    void showQuickSwitcher();
+    void showCommandPalette();
+    void toggleSidePage(QWidget *page); // shows the sidebar on `page`, or hides it if it's showing it already
+    // Opens `path` and selects [column, column + length) on `line` (0-based).
+    void openAt(const QString &path, int line, int column, int length);
+    // A new note `name`.md in the folder (or next to the current file), opened in a tab.
+    void createNamedNote(const QString &name);
+    void updateWordCount();
+    void openDailyNote();
+    void showGraph();
+    void insertTemplate(MarkdownEditor *editor);
+    QString notesRoot() const; // the open folder, or where dialogs start without one
 
     QTabWidget *m_tabs; // the current pane
     QList<QTabWidget *> m_panes; // one, or two when split
@@ -110,6 +130,14 @@ private:
     SettingsDialog *m_settingsDialog = nullptr;
     CloudDrive *m_cloudDrive;
     UpdateController *m_updates;
+    NoteIndex *m_index;
+    SideBar *m_sideBar = nullptr;
+    OutlinePanel *m_outline = nullptr;
+    SearchPanel *m_search = nullptr;
+    TagPanel *m_tagPanel = nullptr;
+    QLabel *m_wordCount = nullptr;
+    QWidget *m_graphWindow = nullptr;
+    GraphView *m_graph = nullptr;
     // Session items on Google Drive, waiting for the mount.
     QString m_pendingFolder;
     QStringList m_pendingFiles;

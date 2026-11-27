@@ -25,7 +25,16 @@ enum class BlockType {
     MathClose,   // the line ending with "$$"
     MathSingle,  // "$$ x $$" alone on a line
     CommentLine, // in a %% comment over several lines (both delimiter lines included)
+    FrontmatterOpen,  // "---" on the document's first line, starting YAML properties
+    FrontmatterLine,
+    FrontmatterClose, // the "---" (or "...") ending them
 };
+
+inline bool isFrontmatterType(BlockType type)
+{
+    return type == BlockType::FrontmatterOpen || type == BlockType::FrontmatterLine
+        || type == BlockType::FrontmatterClose;
+}
 
 inline bool isMathType(BlockType type)
 {
@@ -50,7 +59,7 @@ struct BlockState {
     // comment or string), 15 bits. The parser only passes it on; it's set by whoever highlights the code.
     int code = 0;
     // Inside a block that continues on the next line: $$ math $$ or a %% comment %%.
-    enum class Block { None, Math, Comment };
+    enum class Block { None, Math, Comment, Frontmatter };
     Block block = Block::None;
 
     bool inFence() const { return fenceChar != 0; }
@@ -69,6 +78,10 @@ struct BlockInfo {
     bool checked = false;
     int orderedNumber = 0;
     char16_t listMarker = 0; // '-', '*', '+' for bullets, '.' or ')' for ordered items
+    // Quotes starting an Obsidian callout, "> [!note]- Title": the "[!note]" range and the fold sign.
+    int calloutStart = -1;
+    int calloutEnd = -1;   // after the ']' and the optional '+' / '-'
+    char16_t calloutFold = 0; // '+' (open, foldable), '-' (folded), 0
 
     bool isList() const
     {
@@ -84,7 +97,8 @@ struct LineResult {
 
 // Classifies a single line of Markdown. `state` is the state left by the previous line;
 // `nextLine` is needed to recognize table headers (which must be followed by a delimiter row).
+// `firstLine`: the document's first line, where "---" starts frontmatter.
 LineResult parseLine(std::u16string_view line, BlockState state,
-                     std::optional<std::u16string_view> nextLine = std::nullopt);
+                     std::optional<std::u16string_view> nextLine = std::nullopt, bool firstLine = false);
 
 } // namespace md
