@@ -21,7 +21,7 @@ namespace {
 std::string hunspellPath(const QString &path)
 {
 #ifdef Q_OS_WIN
-    return (u"\\\\?\\" + QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath())).toStdString();
+    return (QStringLiteral("\\\\?\\") + QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath())).toStdString();
 #else
     return QFile::encodeName(path).toStdString();
 #endif

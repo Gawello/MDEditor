@@ -253,6 +253,8 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   lets it through to the window in Markdown mode (Add External Link), like Ctrl+Tab.
 - Never wait (`runAndWait`, dialogs) inside a model's `setData` called by a view's `commitData`: the item editor is
   destroyed in the nested loop and the view then crashes on it. `FolderPanel` queues `renameRequested`.
+- `u"literal" + QString` compiles with Qt 6.10 but not with 6.8 (CI): use `QStringLiteral("...") + ...`.
+  (`u'c' + QString` is fine on both.) Local builds use the distribution's Qt, so CI is the check for 6.8.
 - Qt 6.10 marks `QFile::open` `[[nodiscard]]`: check the result (tests use `CHECK(file.open(...))`).
 - `QTextDocument::find(QRegularExpression, …)` ignores the pattern's case option and uses the
   `FindCaseSensitively` flag instead (case-insensitive without it); `FindBar::findFrom` sets the flag.

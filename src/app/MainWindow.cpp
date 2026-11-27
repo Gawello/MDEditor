@@ -1291,7 +1291,7 @@ void MainWindow::deletePath(const QString &path)
                                     : tr("Delete “%1”?").arg(info.fileName());
     question += u' ' + tr("It will be moved to the trash.");
     if (unsaved)
-        question += u"\n\n" + tr("Unsaved changes in its open tabs will be lost.");
+        question += QStringLiteral("\n\n") + tr("Unsaved changes in its open tabs will be lost.");
     QMessageBox box(QMessageBox::Question, tr("Delete"), question, QMessageBox::Cancel, this);
     QPushButton *remove = box.addButton(tr("Delete"), QMessageBox::DestructiveRole);
     box.setDefaultButton(QMessageBox::Cancel);

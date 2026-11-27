@@ -183,7 +183,7 @@ void showInFileManager(const QString &path)
 {
     const QString folder = QFileInfo(path).absolutePath();
 #if defined(Q_OS_WIN)
-    if (!QProcess::startDetached(QStringLiteral("explorer.exe"), {u"/select," + QDir::toNativeSeparators(path)}))
+    if (!QProcess::startDetached(QStringLiteral("explorer.exe"), {QStringLiteral("/select,") + QDir::toNativeSeparators(path)}))
         QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
 #elif defined(Q_OS_MACOS)
     if (!QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-R"), path}))
@@ -207,7 +207,7 @@ void showInFileManager(const QString &path)
                    {QStringLiteral("--session"), QStringLiteral("--print-reply"),
                     QStringLiteral("--dest=org.freedesktop.FileManager1"), QStringLiteral("--type=method_call"),
                     QStringLiteral("/org/freedesktop/FileManager1"), QStringLiteral("org.freedesktop.FileManager1.ShowItems"),
-                    u"array:string:" + QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded), QStringLiteral("string:")});
+                    QStringLiteral("array:string:") + QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded), QStringLiteral("string:")});
 #endif
 }
 
