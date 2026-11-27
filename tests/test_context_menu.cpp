@@ -248,19 +248,22 @@ TEST_CASE(ctrl_k_is_left_to_the_window_in_markdown)
 
 TEST_CASE(bookmarks_follow_moves_and_deletes)
 {
+    // Absolute paths on every system ("/notes" would become "C:/notes" on Windows).
+    const QString base = QDir::cleanPath(QDir::temp().absoluteFilePath(QStringLiteral("notes")));
+    const auto at = [&](const QString &relative) { return base + u'/' + relative; };
     Bookmarks::setOrder({});
-    Bookmarks::add(QStringLiteral("/notes/a.md"));
-    Bookmarks::add(QStringLiteral("/notes/sub"));
-    Bookmarks::add(QStringLiteral("/notes/sub/b.md"));
-    Bookmarks::add(QStringLiteral("/notes/a.md")); // once only
+    Bookmarks::add(at(QStringLiteral("a.md")));
+    Bookmarks::add(at(QStringLiteral("sub")));
+    Bookmarks::add(at(QStringLiteral("sub/b.md")));
+    Bookmarks::add(at(QStringLiteral("a.md"))); // once only
     CHECK(Bookmarks::list().size() == 3);
 
-    Bookmarks::moved(QStringLiteral("/notes/sub"), QStringLiteral("/notes/other"));
-    CHECK(Bookmarks::list() == (QStringList{QStringLiteral("/notes/a.md"), QStringLiteral("/notes/other"),
-                                            QStringLiteral("/notes/other/b.md")}));
-    Bookmarks::removed(QStringLiteral("/notes/other"));
-    CHECK(Bookmarks::list() == QStringList{QStringLiteral("/notes/a.md")});
-    Bookmarks::toggle(QStringLiteral("/notes/a.md"));
+    Bookmarks::moved(at(QStringLiteral("sub")), at(QStringLiteral("other")));
+    CHECK(Bookmarks::list()
+          == (QStringList{at(QStringLiteral("a.md")), at(QStringLiteral("other")), at(QStringLiteral("other/b.md"))}));
+    Bookmarks::removed(at(QStringLiteral("other")));
+    CHECK(Bookmarks::list() == QStringList{at(QStringLiteral("a.md"))});
+    Bookmarks::toggle(at(QStringLiteral("a.md")));
     CHECK(Bookmarks::list().isEmpty());
 }
 

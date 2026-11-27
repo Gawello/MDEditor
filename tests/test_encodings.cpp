@@ -25,10 +25,13 @@ QByteArray readFile(const QString &path)
     return file.readAll();
 }
 
+// Through Encodings, as Qt alone has no legacy encodings on Windows.
 QByteArray in(const char *encoding, const QString &text)
 {
-    QStringEncoder encoder(encoding);
-    return encoder(text);
+    bool ok = false;
+    const QByteArray data = Encodings::encode(text, QString::fromLatin1(encoding), false, &ok);
+    CHECK(ok);
+    return data;
 }
 
 const QString polish = QStringLiteral("Zażółć gęślą jaźń\nŁódź\n");
@@ -62,6 +65,24 @@ TEST_CASE(encodings_are_detected)
     CHECK(Encodings::detect(in("UTF-16LE", QStringLiteral("hello world\n")), {}).encoding == QStringLiteral("UTF-16LE"));
     CHECK(Encodings::detect(in("UTF-16BE", QStringLiteral("hello world\n")), {}).encoding == QStringLiteral("UTF-16BE"));
     CHECK(Encodings::detect(QByteArray("\x89PNG\r\n\x1a\n\0\0\0\rIHDR\x01\x02", 18), {}).encoding.isEmpty());
+}
+
+TEST_CASE(encoding_names_are_normalized)
+{
+    CHECK(Encodings::normalized(QStringLiteral("ISO8859-2")) == QStringLiteral("ISO-8859-2"));
+    CHECK(Encodings::normalized(QStringLiteral("iso_8859-15")) == QStringLiteral("ISO-8859-15"));
+    CHECK(Encodings::normalized(QStringLiteral("microsoft-cp1251")) == QStringLiteral("windows-1251"));
+    CHECK(Encodings::normalized(QStringLiteral("CP1250")) == QStringLiteral("windows-1250"));
+    CHECK(Encodings::normalized(QStringLiteral("UTF-8")) == QStringLiteral("UTF-8"));
+    // Every system can convert the encodings the app offers, Windows included (code pages instead of ICU).
+    for (const char *name : {"windows-1250", "ISO8859-2", "ISO-8859-1", "IBM852", "windows-1251"})
+        CHECK(Encodings::isSupported(QString::fromLatin1(name)));
+    bool ok = false;
+    CHECK(Encodings::decode(Encodings::encode(polish, QStringLiteral("ISO8859-2"), false, &ok), QStringLiteral("iso8859-2"))
+          == polish);
+    CHECK(ok);
+    Encodings::encode(QStringLiteral("→"), QStringLiteral("windows-1250"), false, &ok);
+    CHECK(!ok);
 }
 
 TEST_CASE(legacy_and_utf16_files_save_byte_for_byte)

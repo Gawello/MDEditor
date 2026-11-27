@@ -7,11 +7,13 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h> // GetACP
+#include <windows.h> // GetACP, code page conversions
 #endif
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QLocale>
+#include <QRegularExpression>
 #include <QStringConverter>
 
 namespace Encodings {
@@ -72,9 +74,109 @@ Detection detect(const QByteArray &data, const QString &fallback)
     return {isSupported(fallback) ? fallback : QStringLiteral("ISO-8859-1"), false, 0};
 }
 
+namespace {
+
+#ifdef _WIN32
+// Qt for Windows has no ICU: legacy encodings go through the Windows code pages instead.
+UINT codePage(const QString &encoding)
+{
+    const QString name = encoding.toLower();
+    if (name.startsWith(u"windows-")) {
+        bool ok = false;
+        const uint number = name.mid(8).toUInt(&ok);
+        if (ok && number >= 874 && number <= 1258 && IsValidCodePage(number))
+            return number;
+    }
+    static const QHash<QString, UINT> pages{
+        {QStringLiteral("iso-8859-1"), 28591},  {QStringLiteral("iso-8859-2"), 28592},
+        {QStringLiteral("iso-8859-3"), 28593},  {QStringLiteral("iso-8859-4"), 28594},
+        {QStringLiteral("iso-8859-5"), 28595},  {QStringLiteral("iso-8859-6"), 28596},
+        {QStringLiteral("iso-8859-7"), 28597},  {QStringLiteral("iso-8859-8"), 28598},
+        {QStringLiteral("iso-8859-9"), 28599},  {QStringLiteral("iso-8859-13"), 28603},
+        {QStringLiteral("iso-8859-15"), 28605}, {QStringLiteral("ibm852"), 852},
+        {QStringLiteral("koi8-r"), 20866},      {QStringLiteral("koi8-u"), 21866},
+        {QStringLiteral("shift_jis"), 932},     {QStringLiteral("euc-jp"), 20932},
+        {QStringLiteral("gb18030"), 54936},     {QStringLiteral("big5"), 950},
+        {QStringLiteral("euc-kr"), 51949},
+    };
+    const UINT page = pages.value(name, 0);
+    return page && IsValidCodePage(page) ? page : 0;
+}
+
+// Some code pages don't take the flags that report invalid or unmappable characters.
+bool strictPage(UINT page)
+{
+    return page != 42 && page != 52936 && page != 54936 && page != 65000 && !(page >= 50220 && page <= 50229)
+        && !(page >= 57002 && page <= 57011);
+}
+
+QString decodeWindows(const QByteArray &data, UINT page, bool *ok)
+{
+    if (ok)
+        *ok = true;
+    if (data.isEmpty())
+        return {};
+    const int size = int(data.size());
+    int length = MultiByteToWideChar(page, strictPage(page) ? MB_ERR_INVALID_CHARS : 0, data.constData(), size, nullptr, 0);
+    if (length <= 0) { // bytes that aren't valid in the code page: decode anyway, with replacements
+        if (ok)
+            *ok = false;
+        length = MultiByteToWideChar(page, 0, data.constData(), size, nullptr, 0);
+    }
+    QString text(qMax(length, 0), Qt::Uninitialized);
+    if (length > 0)
+        MultiByteToWideChar(page, 0, data.constData(), size, reinterpret_cast<wchar_t *>(text.data()), length);
+    return text;
+}
+
+QByteArray encodeWindows(const QString &text, UINT page, bool *ok)
+{
+    if (ok)
+        *ok = true;
+    if (text.isEmpty())
+        return {};
+    const auto *wide = reinterpret_cast<const wchar_t *>(text.utf16());
+    const int size = int(text.size());
+    const bool strict = strictPage(page);
+    const DWORD flags = strict ? WC_NO_BEST_FIT_CHARS : 0;
+    BOOL usedDefault = FALSE;
+    const int length = WideCharToMultiByte(page, flags, wide, size, nullptr, 0, nullptr, strict ? &usedDefault : nullptr);
+    QByteArray data(qMax(length, 0), Qt::Uninitialized);
+    if (length > 0)
+        WideCharToMultiByte(page, flags, wide, size, data.data(), length, nullptr, strict ? &usedDefault : nullptr);
+    if (ok)
+        *ok = length > 0 && !usedDefault;
+    return data;
+}
+#endif
+
+} // namespace
+
+QString normalized(const QString &encoding)
+{
+    // Hunspell dictionaries and old files name encodings loosely: "ISO8859-2", "microsoft-cp1251", "CP1250".
+    const QString lower = encoding.trimmed().toLower();
+    static const QRegularExpression iso(QStringLiteral(R"(^iso[-_ ]?8859[-_ ](\d+)$)"));
+    static const QRegularExpression windows(QStringLiteral(R"(^(?:microsoft-cp|windows-|cp)(12\d\d)$)"));
+    if (const auto match = iso.match(lower); match.hasMatch())
+        return QStringLiteral("ISO-8859-") + match.captured(1);
+    if (const auto match = windows.match(lower); match.hasMatch())
+        return QStringLiteral("windows-") + match.captured(1);
+    if (lower == u"cp852")
+        return QStringLiteral("IBM852");
+    return encoding.trimmed();
+}
+
 bool isSupported(const QString &encoding)
 {
-    return QStringDecoder(encoding.toLatin1().constData()).isValid();
+    const QString name = normalized(encoding);
+    if (QStringDecoder(name.toLatin1().constData()).isValid())
+        return true;
+#ifdef _WIN32
+    return codePage(name) != 0;
+#else
+    return false;
+#endif
 }
 
 QStringList common()
@@ -175,8 +277,13 @@ QString label(const QString &encoding, bool bom)
 
 QString decode(const QByteArray &data, const QString &encoding, bool *ok)
 {
-    QStringDecoder decoder(encoding.toLatin1().constData(), QStringConverter::Flag::Stateless);
+    const QString name = normalized(encoding);
+    QStringDecoder decoder(name.toLatin1().constData(), QStringConverter::Flag::Stateless);
     if (!decoder.isValid()) {
+#ifdef _WIN32
+        if (const UINT page = codePage(name))
+            return decodeWindows(data, page, ok);
+#endif
         if (ok)
             *ok = false;
         return QString::fromLatin1(data);
@@ -189,9 +296,14 @@ QString decode(const QByteArray &data, const QString &encoding, bool *ok)
 
 QByteArray encode(const QString &text, const QString &encoding, bool bom, bool *ok)
 {
-    QStringEncoder encoder(encoding.toLatin1().constData(),
+    const QString name = normalized(encoding);
+    QStringEncoder encoder(name.toLatin1().constData(),
                            bom ? QStringConverter::Flag::WriteBom : QStringConverter::Flag::Default);
     if (!encoder.isValid()) {
+#ifdef _WIN32
+        if (const UINT page = codePage(name))
+            return encodeWindows(text, page, ok); // legacy code pages have no byte order mark
+#endif
         if (ok)
             *ok = false;
         return text.toUtf8();

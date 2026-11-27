@@ -24,6 +24,8 @@ Detection detect(const QByteArray &data, const QString &fallback);
 // Encodings offered in menus, those this Qt can convert, in a sensible order.
 QStringList common();
 bool isSupported(const QString &encoding);
+// The usual name for loosely written ones: "ISO8859-2" -> "ISO-8859-2", "microsoft-cp1251" -> "windows-1251".
+QString normalized(const QString &encoding);
 // For files that aren't UTF-8: the usual legacy encoding for the system's language (windows-1250 for
 // Polish, Czech...), windows-1252 otherwise.
 QString defaultFallback();

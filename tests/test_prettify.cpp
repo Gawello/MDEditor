@@ -1,4 +1,5 @@
 #include "TestHarness.h"
+#include "app/AppSettings.h"
 #include "editor/MarkdownEditor.h"
 
 #include <QAction>
@@ -149,11 +150,16 @@ TEST_CASE(prettify_keeps_the_cursor_on_the_delimiter_row)
 
 TEST_CASE(prettify_keeps_the_cursor_on_its_token_in_code)
 {
+    // The built-in formatters, whatever is installed (CI machines have clang-format, with 2-space indents).
+    AppSettings::instance().setFormatterCommand(QStringLiteral("cpp"), QStringLiteral("builtin"));
+    AppSettings::instance().setFormatterCommand(QStringLiteral("json"), QStringLiteral("builtin"));
     CHECK(afterPrettify("```json\n{\"first\":1,\"se^cond\":2}\n```")
           == "```json\n{\n    \"first\": 1,\n    \"se^cond\": 2\n}\n```");
     CHECK(afterPrettify("```json\n{\"a\":^1}\n```") == "```json\n{\n    \"a\": ^1\n}\n```");
     CHECK(afterPrettify("```cpp\nint f() {\nreturn^ 0;\n}\n```") == "```cpp\nint f() {\n    return^ 0;\n}\n```");
     CHECK(afterPrettify("```cpp\nint f() {\n^return 0;\n}\n```") == "```cpp\nint f() {\n    ^return 0;\n}\n```");
+    AppSettings::instance().setFormatterCommand(QStringLiteral("cpp"), QString());
+    AppSettings::instance().setFormatterCommand(QStringLiteral("json"), QString());
 }
 
 TEST_CASE(prettify_leaves_the_cursor_when_nothing_changes)
