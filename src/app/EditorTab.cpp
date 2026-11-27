@@ -4,10 +4,13 @@
 #include "app/Background.h"
 #include "app/ExternalChangeBar.h"
 #include "app/FindBar.h"
+#include "document/Encodings.h"
 #include "editor/MarkdownEditor.h"
 #include "plugins/PluginManager.h"
 
 #include <QFileInfo>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QVBoxLayout>
 
 EditorTab::EditorTab(QWidget *parent)
@@ -25,6 +28,7 @@ EditorTab::EditorTab(QWidget *parent)
     setFocusProxy(m_editor);
 
     connect(m_editor->document(), &QTextDocument::modificationChanged, this, &EditorTab::stateChanged);
+    connect(m_editor->document(), &QTextDocument::contentsChange, this, &EditorTab::mirror);
     connect(&m_diskCheck, &QFutureWatcher<DiskCheck>::finished, this, &EditorTab::handleDiskCheck);
     connect(m_changeBar, &ExternalChangeBar::reloadRequested, this, [this] {
         QString error;
@@ -49,9 +53,10 @@ QString EditorTab::waitLabel() const
     return tr("Waiting for %1…").arg(displayName());
 }
 
-bool EditorTab::load(const QString &path, QString &error)
+bool EditorTab::load(const QString &path, QString &error, bool *binary)
 {
-    const auto file = runAndWait([path] { return Document::read(path); },
+    const QString fallback = AppSettings::instance().fallbackEncoding();
+    const auto file = runAndWait([path, fallback] { return Document::read(path, fallback); },
                                  tr("Waiting for %1…").arg(QFileInfo(path).fileName()), this);
     if (!file) {
         error = tr("Stopped waiting for the drive.");
@@ -59,24 +64,34 @@ bool EditorTab::load(const QString &path, QString &error)
     }
     if (!file->ok) {
         error = file->error;
+        if (binary)
+            *binary = file->binary;
         return false;
     }
 
     m_document.adopt(*file);
-    // Path first, so relative image paths resolve during the first highlight.
+    // Path and mode first, so relative image paths resolve during the first highlight, and a big
+    // non-Markdown file is never parsed as Markdown.
     m_editor->setDocumentPath(m_document.filePath());
+    m_editor->setMarkdownMode(MarkdownEditor::isMarkdownFile(m_document.filePath()));
     m_editor->setMarkdown(file->text);
     m_editor->document()->setModified(false);
     m_changeBar->hide();
     emit stateChanged();
+    if (file->lossy)
+        emit statusMessage(tr("%1 has bytes that aren't valid %2: saving will replace them")
+                               .arg(displayName(), Encodings::label(file->encoding, false)));
     PluginManager::instance().notifyOpen(m_document.filePath());
     return true;
 }
 
-bool EditorTab::reload(QString &error)
+bool EditorTab::reload(QString &error, const QString &encoding)
 {
     const QString path = filePath();
-    const auto file = runAndWait([path] { return Document::read(path); }, waitLabel(), this);
+    const QString forced = encoding; // otherwise detected again: the file may have been rewritten as UTF-8
+    const QString fallback = AppSettings::instance().fallbackEncoding();
+    const auto file = runAndWait([path, fallback, forced] { return Document::read(path, fallback, forced); },
+                                 waitLabel(), this);
     if (!file) {
         error = tr("Stopped waiting for the drive.");
         return false;
@@ -91,6 +106,7 @@ bool EditorTab::reload(QString &error)
     m_editor->document()->setModified(false);
     m_changeBar->hide();
     emit stateChanged();
+    shareFileState();
     return true;
 }
 
@@ -115,7 +131,12 @@ EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool 
     // Plugins may adjust the text before it's written (e.g. update a "modified" date).
     m_editor->replaceAll(PluginManager::instance().notifyBeforeSave(path, m_editor->markdown()));
 
-    const QByteArray data = m_document.encode(m_editor->markdown());
+    bool encodable = true;
+    const QByteArray data = m_document.encode(m_editor->markdown(), &encodable);
+    if (!encodable) {
+        error = tr("Some characters can't be written in %1.").arg(Encodings::label(m_document.encoding(), false));
+        return SaveResult::Unencodable;
+    }
     const auto file = runAndWait([path, data] { return Document::write(path, data); }, waitLabel(), this);
     if (!file) {
         // The write can't be cancelled, so the tab stays modified and the next save checks the disk again.
@@ -127,13 +148,115 @@ EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool 
         return SaveResult::Failed;
     }
 
+    const bool renamed = m_document.filePath() != file->path;
     m_document.adopt(*file);
     m_editor->document()->setModified(false);
     m_editor->setDocumentPath(m_document.filePath());
+    if (renamed) // Save As may have changed the type: notes.md -> script.py
+        m_editor->setMarkdownMode(MarkdownEditor::isMarkdownFile(m_document.filePath()));
     m_changeBar->hide();
     emit stateChanged();
+    shareFileState();
     PluginManager::instance().notifySave(m_document.filePath());
     return SaveResult::Saved;
+}
+
+void EditorTab::setFilePath(const QString &path)
+{
+    const bool typeChanged =
+        MarkdownEditor::isMarkdownFile(path) != MarkdownEditor::isMarkdownFile(m_document.filePath());
+    m_document.setFilePath(path);
+    m_editor->setDocumentPath(path);
+    if (typeChanged)
+        m_editor->setMarkdownMode(MarkdownEditor::isMarkdownFile(path));
+    emit stateChanged();
+}
+
+void EditorTab::setEncoding(const QString &encoding, bool bom)
+{
+    if (encoding == m_document.encoding() && bom == m_document.hasBom())
+        return;
+    m_document.setEncoding(encoding, bom);
+    m_editor->document()->setModified(true);
+    emit stateChanged();
+    shareFileState();
+}
+
+void EditorTab::setCrlf(bool crlf)
+{
+    if (crlf == m_document.usesCrlf())
+        return;
+    m_document.setCrlf(crlf);
+    m_editor->document()->setModified(true);
+    emit stateChanged();
+    shareFileState();
+}
+
+void EditorTab::openTwin(EditorTab *twin)
+{
+    unlinkTwin();
+    twin->unlinkTwin();
+    twin->m_document = m_document;
+    twin->m_editor->setDocumentPath(filePath());
+    twin->m_editor->setMarkdownMode(m_editor->markdownMode());
+    twin->m_editor->setMarkdown(m_editor->markdown());
+    twin->m_editor->document()->setModified(isModified());
+    m_twin = twin;
+    twin->m_twin = this;
+    emit twin->stateChanged();
+}
+
+void EditorTab::unlinkTwin()
+{
+    if (m_twin)
+        m_twin->m_twin = nullptr;
+    m_twin = nullptr;
+}
+
+// Applies an edit of this tab's text to the twin's. Highlighters change formats only, which emits the same
+// signal with unchanged text: those are skipped by comparing.
+void EditorTab::mirror(int position, int removed, int added)
+{
+    if (!m_twin || m_mirroring || m_twin->m_mirroring)
+        return;
+    QTextDocument *from = m_editor->document();
+    QTextDocument *to = m_twin->m_editor->document();
+    // At the end of the document Qt counts the final paragraph separator too: clamp to the real text.
+    const int fromEnd = from->characterCount() - 1;
+    const int toEnd = to->characterCount() - 1;
+    QTextCursor source(from);
+    source.setPosition(std::min(position, fromEnd));
+    source.setPosition(std::min(position + added, fromEnd), QTextCursor::KeepAnchor);
+    QString text = source.selectedText();
+    text.replace(QChar::ParagraphSeparator, u'\n');
+
+    QTextCursor target(to);
+    target.setPosition(std::min(position, toEnd));
+    target.setPosition(std::min(position + removed, toEnd), QTextCursor::KeepAnchor);
+    QString current = target.selectedText();
+    current.replace(QChar::ParagraphSeparator, u'\n');
+    if (current == text)
+        return;
+    m_twin->m_mirroring = true;
+    target.insertText(text);
+    m_twin->m_mirroring = false;
+    // Edits can be anywhere: if both documents ever differ in length, start the twin over from this text.
+    if (to->characterCount() != from->characterCount()) {
+        m_twin->m_mirroring = true;
+        m_twin->m_editor->replaceAll(m_editor->markdown());
+        m_twin->m_mirroring = false;
+    }
+}
+
+void EditorTab::shareFileState()
+{
+    if (!m_twin)
+        return;
+    m_twin->m_document = m_document;
+    m_twin->m_editor->setDocumentPath(filePath());
+    m_twin->m_editor->document()->setModified(isModified());
+    m_twin->m_changeBar->hide();
+    emit m_twin->stateChanged();
 }
 
 void EditorTab::checkDisk()

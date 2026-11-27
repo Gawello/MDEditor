@@ -5,6 +5,10 @@
 #include <QPalette>
 #include <QStringList>
 
+#include "syntax/Syntax.h"
+
+#include <array>
+
 // Colors and font metrics used by the live preview. Derived from the widget palette,
 // so it follows the system light/dark mode.
 struct EditorTheme {
@@ -18,6 +22,9 @@ struct EditorTheme {
     QColor highlightBackground;
     QColor quoteBar;
     QColor rule;
+    std::array<QColor, syntax::tokenCount> syntax; // code colors by syntax::Token; invalid: plain text
+
+    QColor syntaxColor(syntax::Token token) const { return syntax[size_t(token)]; }
 
     qreal headingPointSize(int level) const;
 

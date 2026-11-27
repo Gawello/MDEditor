@@ -43,10 +43,10 @@ void writePlugin(const QDir &root, const QString &id, const QString &code)
 {
     root.mkpath(id);
     QFile manifest(root.filePath(id + "/manifest.json"));
-    manifest.open(QIODevice::WriteOnly);
+    CHECK(manifest.open(QIODevice::WriteOnly));
     manifest.write(QStringLiteral("{\"id\": \"%1\", \"name\": \"%1\"}").arg(id).toUtf8());
     QFile main(root.filePath(id + "/main.js"));
-    main.open(QIODevice::WriteOnly);
+    CHECK(main.open(QIODevice::WriteOnly));
     main.write(code.toUtf8());
 }
 

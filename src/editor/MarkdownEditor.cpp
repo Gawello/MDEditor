@@ -1,23 +1,30 @@
 #include "editor/MarkdownEditor.h"
 
 #include "app/AppSettings.h"
+#include "editor/CodeHighlighter.h"
+#include "spell/SpellChecker.h"
 #include "editor/LivePreviewHighlighter.h"
 #include "format/CodeFormatters.h"
 #include "format/FormatterRegistry.h"
 #include "markdown/InlineParser.h"
+#include "markdown/TableEdit.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFileInfo>
+#include <QFontDatabase>
+#include <QFontInfo>
 #include <QImageReader>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegularExpression>
 #include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextLayout>
@@ -74,6 +81,20 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
 
     m_theme = EditorTheme::fromPalette(palette(), font());
     m_highlighter = new LivePreviewHighlighter(document(), &m_theme);
+    m_codeHighlighter = new CodeHighlighter(this, &m_theme);
+    m_highlighter->setCaretProvider([this] { return textCursor().position(); });
+    m_codeHighlighter->setCaretProvider([this] { return textCursor().position(); });
+    // New dictionaries or words: mark the text again.
+    connect(&SpellChecker::instance(), &SpellChecker::changed, this, [this] {
+        if (m_highlighter->isAttached())
+            m_highlighter->rehighlight();
+        if (m_codeHighlighter->document())
+            m_codeHighlighter->rehighlight();
+    });
+    m_highlighter->setMathSizeProvider([this](const QString &tex, bool display) {
+        const MathRenderer::Formula &rendered = formula(tex, display);
+        return MathMetrics{rendered.size(), rendered.baseline};
+    });
     m_highlighter->setImageSizeProvider(
         [this](const QString &target, int requestedWidth) { return imageDisplaySize(target, requestedWidth); });
 
@@ -81,7 +102,10 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     m_imageRelayout = new QTimer(this);
     m_imageRelayout->setSingleShot(true);
     m_imageRelayout->setInterval(120);
-    connect(m_imageRelayout, &QTimer::timeout, m_highlighter, &QSyntaxHighlighter::rehighlight);
+    connect(m_imageRelayout, &QTimer::timeout, m_highlighter, [this] {
+        if (m_highlighter->isAttached())
+            m_highlighter->rehighlight();
+    });
 
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
 
@@ -96,11 +120,36 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     });
 }
 
+bool MarkdownEditor::isMarkdownFile(const QString &path)
+{
+    if (path.isEmpty())
+        return true; // a new note
+    static const QStringList suffixes{"md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"};
+    return suffixes.contains(QFileInfo(path).suffix().toLower());
+}
+
+void MarkdownEditor::setMarkdownMode(bool on)
+{
+    if (on == m_markdown)
+        return;
+    m_markdown = on;
+    const bool modified = document()->isModified();
+    m_highlighter->setAttached(on);
+    updateCodeHighlighter();
+    document()->setModified(modified);
+    applyFontSettings(); // monospace for plain text
+    applyTheme();
+    refreshActiveBlock();
+    emit markdownModeChanged(on);
+}
+
 void MarkdownEditor::applyFontSettings()
 {
     QFont base = QApplication::font();
     const QString family = AppSettings::instance().fontFamily();
-    if (!family.isEmpty())
+    if (!m_markdown)
+        base = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    else if (!family.isEmpty())
         base.setFamily(family);
     base.setFamilies(EditorTheme::withEmoji(base));
     base.setPointSizeF(AppSettings::instance().fontSize());
@@ -198,6 +247,11 @@ bool MarkdownEditor::event(QEvent *event)
             event->ignore();
             return false;
         }
+        // On X11 Ctrl+K deletes to the end of the line; in Markdown it's Add External Link (window menu).
+        if (m_markdown && key->keyCombination() == QKeyCombination(Qt::CTRL | Qt::Key_K)) {
+            event->ignore();
+            return false;
+        }
     }
     return QPlainTextEdit::event(event);
 }
@@ -207,20 +261,22 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
     const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
     const int key = event->key();
 
-    if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier
-        && (tableEnter() || continueList()))
-        return;
-    if (key == Qt::Key_Tab && modifiers == Qt::NoModifier && (moveToTableCell(false) || indentListItem(false)))
-        return;
-    if (key == Qt::Key_Backtab && (moveToTableCell(true) || indentListItem(true)))
-        return;
+    if (m_markdown) {
+        if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier
+            && (tableEnter() || continueList()))
+            return;
+        if (key == Qt::Key_Tab && modifiers == Qt::NoModifier && (moveToTableCell(false) || indentListItem(false)))
+            return;
+        if (key == Qt::Key_Backtab && (moveToTableCell(true) || indentListItem(true)))
+            return;
+    }
 
     QPlainTextEdit::keyPressEvent(event);
 }
 
 void MarkdownEditor::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton) {
+    if (event->button() == Qt::LeftButton && m_markdown) {
         const QPoint pos = event->position().toPoint();
         if (event->modifiers() & Qt::ControlModifier) {
             if (const auto target = linkTargetAt(pos)) {
@@ -247,38 +303,35 @@ QKeySequence MarkdownEditor::prettifyDocumentShortcut()
 void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
 {
     const QPoint pos = event->pos();
-    // Prettify works on the cursor, so a right click must put it on what was clicked. A click on the
+    // The menu acts on the cursor, so a right click must put it on what was clicked. A click on the
     // selection keeps it, and the menu key (no position of its own) leaves the cursor alone.
     if (event->reason() == QContextMenuEvent::Mouse) {
         const QTextCursor current = textCursor();
         const int hit = cursorForPosition(pos).position();
         const bool onSelection = current.hasSelection() && hit >= current.selectionStart() && hit < current.selectionEnd();
-        if (!onSelection && !focusTableCellAt(pos))
+        if (!onSelection && !(m_markdown && focusTableCellAt(pos)))
             setTextCursor(cursorForPosition(pos));
     }
-
-    const std::unique_ptr<QMenu> menu(createStandardContextMenu(pos));
-    menu->addSeparator();
-    // The shortcut is only displayed (text after a tab): the main menu's action owns it.
-    const auto label = [](const QString &text, const QKeySequence &shortcut) {
-        return text + u'\t' + shortcut.toString(QKeySequence::NativeText);
-    };
-    // No mnemonics: P and D belong to the standard Paste and Delete entries.
-    menu->addAction(label(tr("Prettify"), prettifyShortcut()), this, [this] { formatAtCursor(); });
-    menu->addAction(label(tr("Prettify Document"), prettifyDocumentShortcut()), this, [this] { formatDocument(); });
+    const std::unique_ptr<QMenu> menu = createContextMenu(event->reason() == QContextMenuEvent::Mouse
+                                                              ? pos
+                                                              : cursorRect().center());
     menu->exec(event->globalPos());
 }
 
 void MarkdownEditor::mouseMoveEvent(QMouseEvent *event)
 {
     QPlainTextEdit::mouseMoveEvent(event);
-    const bool overLink = (event->modifiers() & Qt::ControlModifier)
+    const bool overLink = m_markdown && (event->modifiers() & Qt::ControlModifier)
         && linkTargetAt(event->position().toPoint()).has_value();
     viewport()->setCursor(overLink ? Qt::PointingHandCursor : Qt::IBeamCursor);
 }
 
 void MarkdownEditor::paintEvent(QPaintEvent *event)
 {
+    if (!m_markdown) {
+        QPlainTextEdit::paintEvent(event);
+        return;
+    }
     const QRect area = event->rect();
     const QPointF offset = contentOffset();
     const qreal margin = document()->documentMargin();
@@ -326,6 +379,7 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
             continue;
         const md::BlockInfo &info = data->info;
         paintEntities(painter, block, *data);
+        paintMath(painter, block, *data);
 
         switch (info.type) {
         case BlockType::Quote: {
@@ -393,6 +447,18 @@ void MarkdownEditor::setDocumentPath(const QString &filePath)
 {
     m_documentPath = filePath;
     setBaseDirectory(QFileInfo(filePath).absolutePath());
+    updateCodeHighlighter(); // a rename may change the language
+}
+
+void MarkdownEditor::updateCodeHighlighter()
+{
+    if (!m_codeHighlighter)
+        return;
+    const int language = syntax::languageForFileName(toView(QFileInfo(m_documentPath).fileName()));
+    const bool modified = document()->isModified();
+    // Plain-text mode: code gets syntax colors, prose (language 0) spell checking.
+    m_codeHighlighter->setLanguage(m_markdown ? nullptr : document(), language);
+    document()->setModified(modified);
 }
 
 void MarkdownEditor::setBaseDirectory(const QString &directory)
@@ -400,7 +466,7 @@ void MarkdownEditor::setBaseDirectory(const QString &directory)
     if (directory == m_baseDirectory)
         return;
     m_baseDirectory = directory;
-    if (!document()->isEmpty()) // relative image paths now resolve differently
+    if (!document()->isEmpty() && m_highlighter->isAttached()) // relative image paths now resolve differently
         m_highlighter->rehighlight();
 }
 
@@ -435,6 +501,10 @@ void MarkdownEditor::dropEvent(QDropEvent *event)
     const QStringList files = localFiles(event->mimeData());
     if (!files.isEmpty()) {
         event->acceptProposedAction();
+        if (!m_markdown) {
+            emit filesDropped(files);
+            return;
+        }
         QStringList images;
         QStringList documents;
         for (const QString &file : files)
@@ -450,13 +520,17 @@ void MarkdownEditor::dropEvent(QDropEvent *event)
 
 bool MarkdownEditor::canInsertFromMimeData(const QMimeData *source) const
 {
-    return source->hasImage() || QPlainTextEdit::canInsertFromMimeData(source);
+    return (m_markdown && source->hasImage()) || QPlainTextEdit::canInsertFromMimeData(source);
 }
 
 // Pasting copied image files links them; pasting image data (a screenshot, "Copy image")
 // stores it next to the note. Text wins when the clipboard has both (e.g. copied from Word).
 void MarkdownEditor::insertFromMimeData(const QMimeData *source)
 {
+    if (!m_markdown) {
+        QPlainTextEdit::insertFromMimeData(source);
+        return;
+    }
     const QStringList files = localFiles(source);
     if (!files.isEmpty() && std::all_of(files.begin(), files.end(), isImageFile)) {
         insertImageLinks(files, textCursor());
@@ -609,7 +683,10 @@ void MarkdownEditor::applyTheme()
 
     m_theme = EditorTheme::fromPalette(palette(), font());
     setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * AppSettings::instance().indentSize());
-    m_highlighter->rehighlight();
+    if (m_highlighter->isAttached())
+        m_highlighter->rehighlight();
+    if (m_codeHighlighter && m_codeHighlighter->document())
+        m_codeHighlighter->rehighlight();
     updateMargins();
     viewport()->update();
 }
@@ -617,7 +694,8 @@ void MarkdownEditor::applyTheme()
 // Keeps lines at a comfortable reading width by centering the text column.
 void MarkdownEditor::updateMargins()
 {
-    const int characters = AppSettings::instance().readableWidth();
+    // Code and other plain text use the whole width: long lines are common and meaningful there.
+    const int characters = m_markdown ? AppSettings::instance().readableWidth() : 0;
     const int side = characters > 0 ? std::max(0, (width() - fontMetrics().averageCharWidth() * characters) / 2) : 0;
     if (viewportMargins().left() != side)
         setViewportMargins(side, 0, side, 0);
@@ -648,6 +726,42 @@ void MarkdownEditor::paintEntities(QPainter &painter, const QTextBlock &block, c
                          glyph.text);
     }
     painter.restore();
+}
+
+const MathRenderer::Formula &MarkdownEditor::formula(const QString &tex, bool display) const
+{
+    // A little larger than the text, as TeX's Computer Modern looks small next to UI fonts.
+    const qreal size = QFontInfo(font()).pixelSize() * 1.15;
+    return MathRenderer::instance().render(tex, size, m_theme.text, display, devicePixelRatioF());
+}
+
+void MarkdownEditor::paintMath(QPainter &painter, const QTextBlock &block, const BlockData &data) const
+{
+    const QTextLayout *layout = block.layout();
+    if (!layout || (data.math.empty() && !data.mathShown))
+        return;
+    const QRectF rect = blockBoundingGeometry(block).translated(contentOffset());
+    const QPointF origin = rect.topLeft() + layout->position();
+
+    for (const MathGlyph &glyph : data.math) {
+        const QTextLine line = layout->lineForTextPosition(glyph.position);
+        if (!line.isValid())
+            continue;
+        const MathRenderer::Formula &rendered = formula(glyph.tex, glyph.display);
+        const QPointF baseline(origin.x() + line.cursorToX(glyph.position), origin.y() + line.y() + line.ascent());
+        painter.drawPixmap(QPointF(baseline.x(), baseline.y() - rendered.baseline), rendered.pixmap);
+    }
+
+    if (data.mathShown) { // a display block, centered in the text column
+        const MathRenderer::Formula &rendered = formula(data.mathBlock, true);
+        const qreal margin = document()->documentMargin();
+        const qreal column = viewport()->width() - 2 * margin;
+        const QSizeF size = rendered.size();
+        const qreal x = contentOffset().x() + margin + std::max<qreal>(0, (column - size.width()) / 2);
+        const QTextLine first = layout->lineAt(0);
+        const qreal height = first.isValid() ? first.height() : rect.height();
+        painter.drawPixmap(QPointF(x, rect.top() + (height - size.height()) / 2), rendered.pixmap);
+    }
 }
 
 QRectF MarkdownEditor::characterRect(const QTextBlock &block, int position) const
@@ -777,8 +891,10 @@ void MarkdownEditor::openLink(const QString &target)
     if (!file.exists() && file.suffix().isEmpty())
         file.setFile(file.filePath() + QStringLiteral(".md"));
 
+    // Notes and other text files open in a tab; images, PDFs and the like in their own application.
     const QString suffix = file.suffix().toLower();
-    if (suffix == u"md" || suffix == u"markdown" || suffix == u"txt")
+    if (isMarkdownFile(file.filePath()) || suffix == u"txt"
+        || (!isImageFile(file.filePath()) && !FormatterRegistry::instance().languageForSuffix(suffix).isEmpty()))
         emit openFileRequested(file.absoluteFilePath());
     else
         QDesktopServices::openUrl(QUrl::fromLocalFile(file.absoluteFilePath()));
@@ -833,27 +949,38 @@ void MarkdownEditor::insertTable(int rows, int columns)
     for (int r = 1; r < rows; ++r)
         lines << emptyTableRow(columns);
 
+    insertBlockText(lines.join(u'\n'), 2); // first header cell
+    setFocus();
+}
+
+// Inserts a block of Markdown as its own paragraph: on the current line if it's blank, otherwise
+// below it, separated from the text around it by blank lines. `caret` is where the cursor goes.
+void MarkdownEditor::insertBlockText(const QString &text, int caret)
+{
     QTextCursor cursor = textCursor();
     cursor.beginEditBlock();
     cursor.clearSelection();
-    // Keep the table separated from surrounding text by blank lines.
     if (!cursor.block().text().trimmed().isEmpty()) {
         cursor.movePosition(QTextCursor::EndOfBlock);
         cursor.insertBlock();
         cursor.insertBlock();
-    } else if (cursor.block().previous().isValid() && !cursor.block().previous().text().trimmed().isEmpty()) {
-        cursor.insertBlock();
+    } else {
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+        if (cursor.block().previous().isValid() && !cursor.block().previous().text().trimmed().isEmpty())
+            cursor.insertBlock();
     }
     const int start = cursor.position();
-    cursor.insertText(lines.join(u'\n'));
+    cursor.insertText(text);
     const QTextBlock next = cursor.block().next();
     if (next.isValid() && !next.text().trimmed().isEmpty())
         cursor.insertBlock();
     cursor.endEditBlock();
 
-    cursor.setPosition(start + 2); // first header cell
+    cursor.setPosition(start + caret);
     setTextCursor(cursor);
-    setFocus();
+    ensureCursorVisible();
 }
 
 MarkdownEditor::TableGeometry MarkdownEditor::tableGeometry(const QTextBlock &header) const
@@ -1361,7 +1488,7 @@ void MarkdownEditor::formatAtCursor()
             formatRange(code->start, code->end, code->language, &message);
     } else if (isTableBlock(cursor.block())) {
         formatTable(tableHeader(cursor.block()), &message);
-    } else if (!documentLanguage().isEmpty()) {
+    } else if (!documentLanguage().isEmpty() || !m_markdown) {
         formatDocument();
         return;
     } else {
@@ -1374,6 +1501,11 @@ int MarkdownEditor::formatDocument(bool quiet)
 {
     QString message;
     const QString language = documentLanguage();
+    if (!m_markdown && language.isEmpty()) {
+        if (!quiet)
+            emit statusMessage(tr("There is no formatter for this type of file"));
+        return 0;
+    }
     if (!language.isEmpty()) {
         const bool ok = formatRange(0, document()->characterCount() - 1, language, &message);
         if (!quiet)
@@ -1429,4 +1561,607 @@ int MarkdownEditor::formatDocument(bool quiet)
         emit statusMessage(message);
     }
     return formatted;
+}
+
+// --- Editing commands for the menus ------------------------------------------------------------
+
+namespace {
+
+// A menu entry that shows a shortcut without owning it (the main window's action does).
+QString withShortcut(const QString &text, const QKeySequence &shortcut)
+{
+    return shortcut.isEmpty() ? text : text + u'\t' + shortcut.toString(QKeySequence::NativeText);
+}
+
+QString fromStd(const std::u16string &text)
+{
+    return QString::fromStdU16String(text);
+}
+
+bool looksLikeUrl(const QString &text)
+{
+    static const QRegularExpression url(QStringLiteral(R"(^[a-zA-Z][a-zA-Z0-9+.-]+://\S+$|^www\.\S+$)"));
+    return url.match(text.trimmed()).hasMatch();
+}
+
+} // namespace
+
+void MarkdownEditor::setLineStyle(md::LineStyle style, int level)
+{
+    QTextCursor cursor = textCursor();
+    const bool selection = cursor.hasSelection();
+    const QTextBlock first = document()->findBlock(cursor.selectionStart());
+    QTextBlock last = document()->findBlock(cursor.selectionEnd());
+    if (selection && last != first && cursor.selectionEnd() == last.position())
+        last = last.previous(); // a selection of whole lines ends at the start of the next one
+
+    std::vector<std::u16string> lines;
+    for (QTextBlock b = first; b.isValid(); b = b.next()) {
+        lines.push_back(b.text().toStdU16String());
+        if (b == last)
+            break;
+    }
+    const std::vector<std::u16string> styled = md::toggleLineStyle(lines, style, level);
+    if (styled == lines)
+        return;
+
+    QStringList text;
+    for (const std::u16string &line : styled)
+        text << fromStd(line);
+    const QString replacement = text.join(u'\n');
+    const int start = first.position();
+    const int fromEnd = first.length() - 1 - cursor.positionInBlock(); // the caret stays in the same text
+
+    QTextCursor edit(document());
+    edit.setPosition(start);
+    edit.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    edit.insertText(replacement);
+
+    if (selection) {
+        edit.setPosition(start);
+        edit.setPosition(start + int(replacement.size()), QTextCursor::KeepAnchor);
+    } else {
+        edit.setPosition(std::max(start, start + int(replacement.size()) - fromEnd));
+    }
+    setTextCursor(edit);
+}
+
+void MarkdownEditor::clearFormatting()
+{
+    QTextCursor cursor = textCursor();
+    const bool selection = cursor.hasSelection();
+    if (!selection) {
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    }
+    const int start = cursor.selectionStart();
+    QString text = cursor.selectedText();
+    text.replace(QChar::ParagraphSeparator, u'\n');
+
+    QStringList lines = text.split(u'\n'); // inline formatting never spans lines
+    for (QString &line : lines)
+        line = fromStd(md::stripInlineFormatting(toView(line)));
+    const QString result = lines.join(u'\n');
+    if (result == text) {
+        emit statusMessage(tr("No formatting to clear"));
+        return;
+    }
+    cursor.insertText(result);
+    if (selection) {
+        cursor.setPosition(start);
+        cursor.setPosition(start + int(result.size()), QTextCursor::KeepAnchor);
+    }
+    setTextCursor(cursor);
+}
+
+void MarkdownEditor::insertLink(bool wiki)
+{
+    QTextCursor cursor = textCursor();
+    QString selected = cursor.selectedText();
+    selected.replace(QChar::ParagraphSeparator, u' ');
+    const int start = cursor.selectionStart();
+
+    QString text;
+    int caret = 0;
+    if (wiki) {
+        text = QStringLiteral("[[%1]]").arg(selected);
+        caret = selected.isEmpty() ? 2 : int(text.size());
+    } else if (selected.isEmpty()) {
+        text = QStringLiteral("[]()");
+        caret = 1;
+    } else if (looksLikeUrl(selected)) {
+        text = QStringLiteral("[](%1)").arg(selected.trimmed());
+        caret = 1; // the link text comes next
+    } else {
+        text = QStringLiteral("[%1]()").arg(selected);
+        caret = int(text.size()) - 1; // the address comes next
+    }
+    cursor.insertText(text);
+    cursor.setPosition(start + caret);
+    setTextCursor(cursor);
+}
+
+void MarkdownEditor::insertSnippet(Snippet snippet)
+{
+    QTextCursor cursor = textCursor();
+    const bool selection = cursor.hasSelection();
+
+    // Code blocks and callouts wrap the selected lines.
+    if (selection && (snippet == Snippet::CodeBlock || snippet == Snippet::MathBlock || snippet == Snippet::Callout)) {
+        const QTextBlock first = document()->findBlock(cursor.selectionStart());
+        QTextBlock last = document()->findBlock(cursor.selectionEnd());
+        if (last != first && cursor.selectionEnd() == last.position())
+            last = last.previous();
+        QStringList lines;
+        for (QTextBlock b = first; b.isValid(); b = b.next()) {
+            lines << b.text();
+            if (b == last)
+                break;
+        }
+        QString text;
+        int caret = 3;
+        if (snippet == Snippet::CodeBlock) {
+            text = QStringLiteral("```\n%1\n```").arg(lines.join(u'\n'));
+        } else if (snippet == Snippet::MathBlock) {
+            text = QStringLiteral("$$\n%1\n$$").arg(lines.join(u'\n'));
+            caret = int(text.size());
+        } else {
+            for (QString &line : lines)
+                line.prepend(QStringLiteral("> "));
+            text = QStringLiteral("> [!note]\n") + lines.join(u'\n');
+            caret = 9;
+        }
+        QTextCursor edit(document());
+        edit.setPosition(first.position());
+        edit.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+        const int start = first.position();
+        edit.insertText(text);
+        edit.setPosition(start + caret);
+        setTextCursor(edit);
+        return;
+    }
+
+    switch (snippet) {
+    case Snippet::CodeBlock:
+        insertBlockText(QStringLiteral("```\n\n```"), 3); // the caret goes where the language is written
+        break;
+    case Snippet::MathBlock:
+        insertBlockText(QStringLiteral("$$\n\n$$"), 3); // the empty line between the delimiters
+        break;
+    case Snippet::Callout:
+        insertBlockText(QStringLiteral("> [!note]\n> "), 12);
+        break;
+    case Snippet::HorizontalRule:
+        insertBlockText(QStringLiteral("---\n"), 4);
+        break;
+    case Snippet::Footnote: {
+        static const QRegularExpression reference(QStringLiteral(R"(\[\^(\d+)\])"));
+        int number = 0;
+        for (auto it = reference.globalMatch(markdown()); it.hasNext();)
+            number = std::max(number, it.next().captured(1).toInt());
+        const QString label = QStringLiteral("[^%1]").arg(number + 1);
+
+        cursor.beginEditBlock();
+        cursor.setPosition(cursor.selectionEnd());
+        cursor.insertText(label);
+        // The definition goes at the end of the note, below any earlier ones.
+        cursor.movePosition(QTextCursor::End);
+        const QString lastLine = document()->lastBlock().text();
+        QString definition;
+        if (!lastLine.isEmpty())
+            definition += u'\n';
+        if (!lastLine.trimmed().isEmpty() && !lastLine.startsWith(QStringLiteral("[^")))
+            definition += u'\n';
+        cursor.insertText(definition + label + QStringLiteral(": "));
+        cursor.endEditBlock();
+        setTextCursor(cursor);
+        ensureCursorVisible();
+        break;
+    }
+    }
+}
+
+bool MarkdownEditor::cursorInTable() const
+{
+    return m_markdown && isTableBlock(textCursor().block());
+}
+
+int MarkdownEditor::tableColumnAt(const QTextCursor &cursor) const
+{
+    const md::TableRow row = md::splitTableRow(toView(cursor.block().text()));
+    const int pos = cursor.positionInBlock();
+    for (int i = 0; i < int(row.cells.size()); ++i) {
+        if (pos <= row.cells[i].segmentEnd)
+            return i;
+    }
+    return std::max(0, int(row.cells.size()) - 1);
+}
+
+bool MarkdownEditor::tableAction(TableAction action)
+{
+    if (!cursorInTable())
+        return false;
+    const QTextCursor caret = textCursor();
+    const QTextBlock header = tableHeader(caret.block());
+    const QTextBlock last = tableEnd(caret.block());
+    const int firstLine = header.blockNumber();
+    std::vector<std::u16string> lines;
+    for (QTextBlock b = header; b.isValid(); b = b.next()) {
+        lines.push_back(b.text().toStdU16String());
+        if (b == last)
+            break;
+    }
+    auto grid = md::TableGrid::parse(lines);
+    if (!grid)
+        return false;
+
+    int row = std::max(0, md::tableRowOfLine(caret.blockNumber() - firstLine)); // the delimiter row counts as the header
+    int column = std::clamp(tableColumnAt(caret), 0, grid->columnCount() - 1);
+    bool ok = true;
+    using A = TableAction;
+    switch (action) {
+    case A::RowAbove:
+        ok = row > 0; // nothing goes above the header
+        if (ok)
+            grid->insertRow(row);
+        break;
+    case A::RowBelow:
+        grid->insertRow(++row);
+        break;
+    case A::DuplicateRow:
+        ok = row > 0;
+        if (ok) {
+            grid->rows.insert(grid->rows.begin() + row + 1, grid->rows[row]);
+            ++row;
+        }
+        break;
+    case A::DeleteRow:
+        ok = grid->removeRow(row);
+        row = std::min(row, grid->rowCount() - 1);
+        break;
+    case A::MoveRowUp:
+        ok = grid->moveRow(row, row - 1);
+        --row;
+        break;
+    case A::MoveRowDown:
+        ok = grid->moveRow(row, row + 1);
+        ++row;
+        break;
+    case A::ColumnLeft:
+        grid->insertColumn(column);
+        break;
+    case A::ColumnRight:
+        grid->insertColumn(++column);
+        break;
+    case A::DeleteColumn:
+        ok = grid->removeColumn(column);
+        column = std::min(column, grid->columnCount() - 1);
+        break;
+    case A::MoveColumnLeft:
+        ok = grid->moveColumn(column, column - 1);
+        --column;
+        break;
+    case A::MoveColumnRight:
+        ok = grid->moveColumn(column, column + 1);
+        ++column;
+        break;
+    case A::AlignLeft:
+        grid->setAlign(column, md::Align::Left);
+        break;
+    case A::AlignCenter:
+        grid->setAlign(column, md::Align::Center);
+        break;
+    case A::AlignRight:
+        grid->setAlign(column, md::Align::Right);
+        break;
+    case A::SortAscending:
+    case A::SortDescending:
+        grid->sortRows(column, action == A::SortDescending);
+        break;
+    case A::DeleteTable:
+        break;
+    }
+    if (!ok)
+        return false;
+
+    const int start = header.position();
+    const int end = last.position() + last.length() - 1;
+    QTextCursor edit(document());
+    if (action == A::DeleteTable) {
+        // Take one line break along, so no empty line is left in its place.
+        const bool atEnd = !last.next().isValid();
+        edit.setPosition(atEnd && start > 0 ? start - 1 : start);
+        edit.setPosition(atEnd ? end : end + 1, QTextCursor::KeepAnchor);
+        edit.removeSelectedText();
+        setTextCursor(edit);
+        return true;
+    }
+
+    QStringList text;
+    for (const std::u16string &line : fmt::formatTable(grid->render()))
+        text << fromStd(line);
+    edit.setPosition(start);
+    edit.setPosition(end, QTextCursor::KeepAnchor);
+    edit.insertText(text.join(u'\n'));
+    placeInTableCell(document()->findBlockByNumber(firstLine + (row == 0 ? 0 : row + 1)), column, false);
+    return true;
+}
+
+// --- Menus --------------------------------------------------------------------------------------
+
+void MarkdownEditor::addFormatActions(QMenu *menu, const EditorGetter &target, bool ownShortcuts)
+{
+    const struct {
+        const char *name;
+        QKeySequence shortcut;
+        const char *marker;
+    } wraps[] = {
+        {QT_TR_NOOP("&Bold"), QKeySequence(Qt::CTRL | Qt::Key_B), "**"},
+        {QT_TR_NOOP("&Italic"), QKeySequence(Qt::CTRL | Qt::Key_I), "*"},
+        {QT_TR_NOOP("&Strikethrough"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_X), "~~"},
+        {QT_TR_NOOP("&Highlight"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_H), "=="},
+        {QT_TR_NOOP("Inline &Code"), QKeySequence(Qt::CTRL | Qt::Key_QuoteLeft), "`"},
+        {QT_TR_NOOP("&Math"), QKeySequence(), "$"},
+        {QT_TR_NOOP("Comme&nt"), QKeySequence(), "%%"},
+    };
+    for (const auto &wrap : wraps) {
+        const QString marker = QString::fromLatin1(wrap.marker);
+        QAction *action = menu->addAction(ownShortcuts ? tr(wrap.name) : withShortcut(tr(wrap.name), wrap.shortcut));
+        if (ownShortcuts)
+            action->setShortcut(wrap.shortcut);
+        connect(action, &QAction::triggered, menu, [target, marker] {
+            if (MarkdownEditor *editor = target())
+                editor->toggleWrap(marker);
+        });
+    }
+    menu->addSeparator();
+    connect(menu->addAction(tr("C&lear Formatting")), &QAction::triggered, menu, [target] {
+        if (MarkdownEditor *editor = target())
+            editor->clearFormatting();
+    });
+}
+
+void MarkdownEditor::addLinkActions(QMenu *menu, const EditorGetter &target, bool ownShortcuts)
+{
+    const QKeySequence shortcut(Qt::CTRL | Qt::Key_K);
+    connect(menu->addAction(tr("Add &Link")), &QAction::triggered, menu, [target] {
+        if (MarkdownEditor *editor = target())
+            editor->insertLink(true);
+    });
+    QAction *external = menu->addAction(ownShortcuts ? tr("Add E&xternal Link") : withShortcut(tr("Add E&xternal Link"), shortcut));
+    if (ownShortcuts)
+        external->setShortcut(shortcut);
+    connect(external, &QAction::triggered, menu, [target] {
+        if (MarkdownEditor *editor = target())
+            editor->insertLink(false);
+    });
+}
+
+void MarkdownEditor::addParagraphActions(QMenu *menu, const EditorGetter &target)
+{
+    using md::LineStyle;
+    struct Entry {
+        QString name;
+        LineStyle style;
+        int level;
+    };
+    std::vector<Entry> entries{
+        {tr("&Bullet List"), LineStyle::Bullet, 0},
+        {tr("&Numbered List"), LineStyle::Numbered, 0},
+        {tr("&Task List"), LineStyle::Task, 0},
+    };
+    for (int level = 1; level <= 6; ++level)
+        entries.push_back({tr("Heading &%1").arg(level), LineStyle::Heading, level});
+    entries.push_back({tr("B&ody"), LineStyle::Body, 0});
+    entries.push_back({tr("&Quote"), LineStyle::Quote, 0});
+
+    std::vector<std::pair<QAction *, Entry>> actions;
+    for (const Entry &entry : entries) {
+        if (entry.style == LineStyle::Heading && entry.level == 1)
+            menu->addSeparator();
+        if (entry.style == LineStyle::Quote)
+            menu->addSeparator();
+        QAction *action = menu->addAction(entry.name);
+        action->setCheckable(true);
+        const LineStyle style = entry.style;
+        const int level = entry.level;
+        connect(action, &QAction::triggered, menu, [target, style, level] {
+            if (MarkdownEditor *editor = target())
+                editor->setLineStyle(style, level);
+        });
+        actions.emplace_back(action, entry);
+    }
+    // Check what the current line is. A quote is checked along with what it contains.
+    connect(menu, &QMenu::aboutToShow, menu, [target, actions] {
+        MarkdownEditor *editor = target();
+        const QString line = editor ? editor->textCursor().block().text() : QString();
+        const std::u16string_view view = toView(line);
+        int level = 0;
+        const bool quoted = md::lineStyleOf(view) == LineStyle::Quote;
+        const md::BlockInfo info = md::parseLine(view, {}).info;
+        const std::u16string_view inner = quoted ? view.substr(info.contentStart) : view;
+        const LineStyle style = md::lineStyleOf(inner, &level);
+        for (const auto &[action, entry] : actions) {
+            const bool matches = entry.style == LineStyle::Quote
+                ? quoted
+                : entry.style == style && (style != LineStyle::Heading || entry.level == level);
+            action->setChecked(matches);
+        }
+    });
+}
+
+void MarkdownEditor::addInsertActions(QMenu *menu, const EditorGetter &target)
+{
+    const auto add = [&](const QString &name, std::function<void(MarkdownEditor *)> run) {
+        connect(menu->addAction(name), &QAction::triggered, menu, [target, run] {
+            if (MarkdownEditor *editor = target())
+                run(editor);
+        });
+    };
+    add(tr("&Table…"), [](MarkdownEditor *editor) {
+        emit editor->insertTableRequested(editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()));
+    });
+    add(tr("&Callout"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::Callout); });
+    add(tr("Code &Block"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::CodeBlock); });
+    add(tr("&Math Block"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::MathBlock); });
+    add(tr("&Horizontal Rule"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::HorizontalRule); });
+    add(tr("&Footnote"), [](MarkdownEditor *editor) { editor->insertSnippet(Snippet::Footnote); });
+    menu->addSeparator();
+    add(tr("&Symbol or Emoji…"), [](MarkdownEditor *editor) { emit editor->insertSymbolRequested(); });
+}
+
+void MarkdownEditor::addTableActions(QMenu *menu)
+{
+    const QTextCursor caret = textCursor();
+    const QTextBlock header = tableHeader(caret.block());
+    const int row = std::max(0, md::tableRowOfLine(caret.blockNumber() - header.blockNumber()));
+    const int rows = tableEnd(caret.block()).blockNumber() - header.blockNumber(); // header + body rows
+    const int columns = std::max<int>(1, int(md::splitTableRow(toView(header.text())).cells.size()));
+    const int column = std::min(tableColumnAt(caret), columns - 1);
+
+    const auto add = [&](QMenu *to, const QString &name, TableAction action, bool enabled = true) {
+        QAction *item = to->addAction(name, this, [this, action] { tableAction(action); });
+        item->setEnabled(enabled);
+    };
+    add(menu, tr("Add Row &Above"), TableAction::RowAbove, row > 0);
+    add(menu, tr("Add Row &Below"), TableAction::RowBelow);
+    add(menu, tr("D&uplicate Row"), TableAction::DuplicateRow, row > 0);
+    add(menu, tr("Move Row U&p"), TableAction::MoveRowUp, row > 1);
+    add(menu, tr("Move Row &Down"), TableAction::MoveRowDown, row > 0 && row + 1 < rows);
+    add(menu, tr("Delete &Row"), TableAction::DeleteRow, row > 0);
+    menu->addSeparator();
+    add(menu, tr("Add Column &Left"), TableAction::ColumnLeft);
+    add(menu, tr("Add Column Ri&ght"), TableAction::ColumnRight);
+    add(menu, tr("Move Column Le&ft"), TableAction::MoveColumnLeft, column > 0);
+    add(menu, tr("Move Column R&ight"), TableAction::MoveColumnRight, column + 1 < columns);
+    add(menu, tr("Delete &Column"), TableAction::DeleteColumn, columns > 1);
+    menu->addSeparator();
+    QMenu *align = menu->addMenu(tr("Align Colu&mn"));
+    add(align, tr("&Left"), TableAction::AlignLeft);
+    add(align, tr("&Center"), TableAction::AlignCenter);
+    add(align, tr("&Right"), TableAction::AlignRight);
+    QMenu *sort = menu->addMenu(tr("&Sort by Column"));
+    add(sort, tr("&Ascending"), TableAction::SortAscending, rows > 2);
+    add(sort, tr("&Descending"), TableAction::SortDescending, rows > 2);
+    menu->addSeparator();
+    menu->addAction(withShortcut(tr("Prettif&y Table"), prettifyShortcut()), this, [this] { formatAtCursor(); });
+    add(menu, tr("Delete &Table"), TableAction::DeleteTable);
+}
+
+std::pair<int, int> MarkdownEditor::misspelledWordAt(int position) const
+{
+    const QTextBlock block = document()->findBlock(position);
+    if (!block.isValid())
+        return {};
+    const QString text = block.text();
+    const int local = position - block.position();
+
+    // The same prose rules as the highlighters (which skip the word under the cursor, so their underline
+    // can't be asked: a right click has just put the cursor there).
+    std::function<bool(int)> skip = [](int) { return false; };
+    md::InlineResult parsed;
+    int contentStart = 0;
+    if (m_markdown) {
+        const md::BlockInfo info = blockInfo(block);
+        const md::BlockType type = info.type;
+        if (isCode(type) || md::isTableType(type) || md::isMathType(type) || type == BlockType::CommentLine
+            || type == BlockType::HorizontalRule)
+            return {};
+        contentStart = info.contentStart;
+        parsed = md::parseInline(toView(text).substr(contentStart));
+        constexpr std::uint16_t notProse = md::Marker | md::Code | md::Link | md::LinkUrl | md::Math | md::Entity
+            | md::Comment;
+        skip = [&](int i) { return i < contentStart || (parsed.styles[i - contentStart] & notProse); };
+    } else if (syntax::languageForFileName(toView(QFileInfo(m_documentPath).fileName())) != 0) {
+        return {}; // code
+    }
+    for (const auto &[start, end] : SpellChecker::instance().misspelled(text, skip)) {
+        if (local >= start && local <= end)
+            return {block.position() + start, block.position() + end};
+    }
+    return {};
+}
+
+void MarkdownEditor::addSpellingActions(QMenu *menu, int position)
+{
+    const auto [start, end] = misspelledWordAt(position);
+    if (end <= start)
+        return;
+    QTextCursor word(document());
+    word.setPosition(start);
+    word.setPosition(end, QTextCursor::KeepAnchor);
+    const QString text = word.selectedText();
+
+    const QStringList suggestions = SpellChecker::instance().suggestions(text);
+    QFont bold = menu->font();
+    bold.setBold(true);
+    for (const QString &suggestion : suggestions) {
+        QAction *action = menu->addAction(QString(suggestion).replace(u'&', QStringLiteral("&&")), this,
+                                          [this, start, end, suggestion] {
+            QTextCursor edit(document());
+            edit.setPosition(start);
+            edit.setPosition(end, QTextCursor::KeepAnchor);
+            edit.insertText(suggestion);
+        });
+        action->setFont(bold);
+    }
+    if (suggestions.isEmpty())
+        menu->addAction(tr("No Suggestions"))->setEnabled(false);
+    menu->addAction(tr("Add “%1” to Dictionary").arg(QString(text).replace(u'&', QStringLiteral("&&"))), this,
+                    [text] { SpellChecker::instance().addToDictionary(text); });
+    menu->addAction(tr("Ignore “%1”").arg(QString(text).replace(u'&', QStringLiteral("&&"))), this,
+                    [text] { SpellChecker::instance().ignore(text); });
+    menu->addSeparator();
+}
+
+std::unique_ptr<QMenu> MarkdownEditor::createContextMenu(const QPoint &pos)
+{
+    auto menu = std::make_unique<QMenu>(this);
+    const EditorGetter self = [this] { return this; };
+    const bool selection = textCursor().hasSelection();
+    addSpellingActions(menu.get(), cursorForPosition(pos).position());
+
+    if (m_markdown) {
+        if (const auto target = linkTargetAt(pos)) {
+            const QString link = *target;
+            menu->addAction(tr("&Open Link"), this, [this, link] { openLink(link); });
+            menu->addAction(tr("Cop&y Link Address"), this, [link] { QGuiApplication::clipboard()->setText(link); });
+            menu->addSeparator();
+        }
+        if (cursorInTable()) {
+            addTableActions(menu->addMenu(tr("Ta&ble")));
+            menu->addSeparator();
+        }
+        addLinkActions(menu.get(), self, false);
+        menu->addSeparator();
+        addFormatActions(menu->addMenu(tr("&Format")), self, false);
+        addParagraphActions(menu->addMenu(tr("Pa&ragraph")), self);
+        addInsertActions(menu->addMenu(tr("&Insert")), self);
+        menu->addSeparator();
+    } else {
+        menu->addAction(withShortcut(tr("&Undo"), QKeySequence::Undo), this, &QPlainTextEdit::undo)
+            ->setEnabled(document()->isUndoAvailable());
+        menu->addAction(withShortcut(tr("&Redo"), QKeySequence::Redo), this, &QPlainTextEdit::redo)
+            ->setEnabled(document()->isRedoAvailable());
+        menu->addSeparator();
+    }
+
+    menu->addAction(withShortcut(tr("Cu&t"), QKeySequence::Cut), this, &QPlainTextEdit::cut)
+        ->setEnabled(selection && !isReadOnly());
+    menu->addAction(withShortcut(tr("&Copy"), QKeySequence::Copy), this, &QPlainTextEdit::copy)->setEnabled(selection);
+    menu->addAction(withShortcut(tr("&Paste"), QKeySequence::Paste), this, &QPlainTextEdit::paste)
+        ->setEnabled(canPaste());
+    menu->addAction(withShortcut(tr("Paste as Plain T&ext"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V)), this,
+                    [this] { insertPlainText(QGuiApplication::clipboard()->text()); })
+        ->setEnabled(!QGuiApplication::clipboard()->text().isEmpty());
+    menu->addAction(withShortcut(tr("Select &All"), QKeySequence::SelectAll), this, &QPlainTextEdit::selectAll);
+
+    menu->addSeparator();
+    // No mnemonics: P and D belong to the Paste entries.
+    if (m_markdown || !documentLanguage().isEmpty()) {
+        menu->addAction(withShortcut(tr("Prettify"), prettifyShortcut()), this, [this] { formatAtCursor(); });
+        menu->addAction(withShortcut(tr("Prettify Document"), prettifyDocumentShortcut()), this,
+                        [this] { formatDocument(); });
+    }
+    return menu;
 }

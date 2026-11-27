@@ -68,20 +68,20 @@ struct Fixture {
     void installScript(const QString &name, const char *text)
     {
         QFile file(dir.filePath(name));
-        file.open(QIODevice::WriteOnly);
+        CHECK(file.open(QIODevice::WriteOnly));
         file.write(text);
         file.setPermissions(file.permissions() | QFile::ExeOwner);
     }
     void touch(const QString &name)
     {
         QFile file(dir.filePath(name));
-        file.open(QIODevice::WriteOnly);
+        CHECK(file.open(QIODevice::WriteOnly));
     }
     bool has(const QString &name) const { return QFile::exists(dir.filePath(name)); }
     QString calls() const
     {
         QFile file(dir.filePath(QStringLiteral("calls")));
-        file.open(QIODevice::ReadOnly);
+        CHECK(file.open(QIODevice::ReadOnly));
         return QString::fromUtf8(file.readAll());
     }
     // A new CloudDrive is what the application gets after a restart or an update.

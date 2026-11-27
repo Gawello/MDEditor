@@ -29,14 +29,14 @@ namespace {
 void writeFile(const QString &path, const QByteArray &data)
 {
     QFile file(path);
-    file.open(QIODevice::WriteOnly);
+    CHECK(file.open(QIODevice::WriteOnly));
     file.write(data);
 }
 
 QByteArray readFile(const QString &path)
 {
     QFile file(path);
-    file.open(QIODevice::ReadOnly);
+    CHECK(file.open(QIODevice::ReadOnly));
     return file.readAll();
 }
 
@@ -87,7 +87,7 @@ TEST_CASE(document_check_finds_changes_and_ignores_rewrites)
 
     // A sync client rewriting identical bytes changes the date only.
     QFile file(path);
-    file.open(QIODevice::ReadWrite);
+    CHECK(file.open(QIODevice::ReadWrite));
     file.setFileTime(stamp.modified.addSecs(60), QFileDevice::FileModificationTime);
     file.close();
     CHECK(Document::check(path, stamp).state == DiskState::Unchanged);

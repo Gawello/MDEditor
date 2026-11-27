@@ -64,5 +64,39 @@ EditorTheme EditorTheme::fromPalette(const QPalette &palette, const QFont &baseF
 
     t.quoteBar = t.accent;
     t.rule = mix(background, t.text, 0.25);
+
+    // Code colors: One Dark / GitHub-like, with the theme's accent for keywords and its faint text for comments,
+    // so custom themes stay coherent.
+    using syntax::Token;
+    const auto set = [&t](Token token, QColor color) { t.syntax[size_t(token)] = color; };
+    set(Token::Keyword, t.accent);
+    set(Token::Comment, mix(background, t.text, 0.5));
+    if (dark) {
+        set(Token::Type, QColor(0xe5, 0xc0, 0x7b));
+        set(Token::Constant, QColor(0xd1, 0x9a, 0x66));
+        set(Token::String, QColor(0x98, 0xc3, 0x79));
+        set(Token::Number, QColor(0xd1, 0x9a, 0x66));
+        set(Token::Function, QColor(0x61, 0xaf, 0xef));
+        set(Token::Property, QColor(0xe0, 0x6c, 0x75));
+        set(Token::Tag, QColor(0xe0, 0x6c, 0x75));
+        set(Token::Attribute, QColor(0xd1, 0x9a, 0x66));
+        set(Token::Variable, QColor(0xe0, 0x6c, 0x75));
+        set(Token::Meta, QColor(0x56, 0xb6, 0xc2));
+        set(Token::Inserted, QColor(0x98, 0xc3, 0x79));
+        set(Token::Deleted, QColor(0xe0, 0x6c, 0x75));
+    } else {
+        set(Token::Type, QColor(0x95, 0x38, 0x00));
+        set(Token::Constant, QColor(0x05, 0x50, 0xae));
+        set(Token::String, QColor(0x0a, 0x30, 0x69));
+        set(Token::Number, QColor(0x05, 0x50, 0xae));
+        set(Token::Function, QColor(0x82, 0x50, 0xdf));
+        set(Token::Property, QColor(0x05, 0x50, 0xae));
+        set(Token::Tag, QColor(0x11, 0x63, 0x29));
+        set(Token::Attribute, QColor(0x95, 0x38, 0x00));
+        set(Token::Variable, QColor(0x95, 0x38, 0x00));
+        set(Token::Meta, QColor(0x66, 0x39, 0xba));
+        set(Token::Inserted, QColor(0x11, 0x63, 0x29));
+        set(Token::Deleted, QColor(0x82, 0x07, 0x1e));
+    }
     return t;
 }

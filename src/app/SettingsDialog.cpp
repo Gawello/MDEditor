@@ -3,11 +3,14 @@
 #include "app/CloudDrivePage.h"
 
 #include "app/AppSettings.h"
+#include "document/Encodings.h"
+#include "spell/SpellChecker.h"
 #include "format/FormatterRegistry.h"
 #include "plugins/PluginManager.h"
 #include "theme/ThemeManager.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -332,8 +335,54 @@ QWidget *SettingsDialog::createEditorPage()
     });
     form->addRow(tr("Pasted images folder"), attachments);
 
+    auto *encoding = new QComboBox(page);
+    for (const QString &name : Encodings::common()) {
+        if (!name.startsWith(u"UTF"))
+            encoding->addItem(Encodings::label(name, false), name);
+    }
+    encoding->setCurrentIndex(encoding->findData(AppSettings::instance().fallbackEncoding()));
+    connect(encoding, &QComboBox::currentIndexChanged, this, [encoding] {
+        AppSettings::instance().setValue(AppSettings::fallbackEncodingKey, encoding->currentData());
+    });
+    form->addRow(tr("Encoding of other files"), encoding);
+
     layout->addLayout(form);
     layout->addWidget(hint(tr("Pasted images are saved in this folder, next to the note.")));
+    layout->addWidget(hint(tr("Files are read as UTF-8 when they are valid UTF-8 or start with a byte order mark, "
+                              "and in the encoding above otherwise. They are saved in the encoding they were read "
+                              "in; the status bar shows it and can change it.")));
+
+    layout->addWidget(heading(tr("Spelling")));
+    auto *languages = new QListWidget(page);
+    const QStringList enabled = SpellChecker::configuredLanguages();
+    for (const SpellChecker::Dictionary &dictionary : SpellChecker::available()) {
+        auto *item = new QListWidgetItem(QStringLiteral("%1  (%2)").arg(dictionary.name(), dictionary.code), languages);
+        item->setData(Qt::UserRole, dictionary.code);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(enabled.contains(dictionary.code) ? Qt::Checked : Qt::Unchecked);
+    }
+    languages->setMaximumHeight(160);
+    connect(languages, &QListWidget::itemChanged, this, [languages] {
+        QStringList codes;
+        for (int i = 0; i < languages->count(); ++i) {
+            if (languages->item(i)->checkState() == Qt::Checked)
+                codes << languages->item(i)->data(Qt::UserRole).toString();
+        }
+        AppSettings::instance().setValue(AppSettings::spellLanguagesKey, codes.join(u',')); // empty: no checking
+    });
+    layout->addWidget(languages);
+    auto *dictionaries = new QPushButton(tr("Open dictionaries folder"), page);
+    connect(dictionaries, &QPushButton::clicked, this, [] {
+        QDir().mkpath(SpellChecker::userFolder());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(SpellChecker::userFolder()));
+    });
+    auto *row = new QHBoxLayout;
+    row->addWidget(dictionaries);
+    row->addStretch();
+    layout->addLayout(row);
+    layout->addWidget(hint(tr("Words are checked in every language ticked. More Hunspell dictionaries (.aff and .dic "
+                              "files, e.g. from LibreOffice) can be put in the dictionaries folder; the words you "
+                              "add are kept there in words.dic.")));
     layout->addStretch();
     return page;
 }

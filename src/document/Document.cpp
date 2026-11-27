@@ -1,15 +1,14 @@
 #include "document/Document.h"
 
+#include "document/Encodings.h"
+
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
-#include <QStringDecoder>
 
 namespace {
-
-const QByteArray utf8Bom("\xEF\xBB\xBF");
 
 QString tr(const char *text)
 {
@@ -34,29 +33,33 @@ QString Document::displayName() const
     return isUntitled() ? tr("Untitled") : QFileInfo(m_path).fileName();
 }
 
+void Document::setEncoding(const QString &encoding, bool bom)
+{
+    m_encoding = encoding;
+    m_bom = bom;
+}
+
 void Document::reset()
 {
     m_path.clear();
+    m_encoding = Encodings::utf8;
     m_crlf = false;
     m_bom = false;
     m_stamp = FileStamp();
 }
 
-QByteArray Document::encode(const QString &text) const
+QByteArray Document::encode(const QString &text, bool *ok) const
 {
     QString contents = text;
     if (m_crlf)
         contents.replace(u'\n', QStringLiteral("\r\n"));
-
-    QByteArray data = contents.toUtf8();
-    if (m_bom)
-        data.prepend(utf8Bom);
-    return data;
+    return Encodings::encode(contents, m_encoding, m_bom, ok);
 }
 
 void Document::adopt(const LoadedFile &file)
 {
     m_path = file.path;
+    m_encoding = file.encoding;
     m_crlf = file.crlf;
     m_bom = file.bom;
     m_stamp = file.stamp;
@@ -68,7 +71,7 @@ void Document::adopt(const SavedFile &file)
     m_stamp = file.stamp;
 }
 
-LoadedFile Document::read(const QString &path)
+LoadedFile Document::read(const QString &path, const QString &fallback, const QString &forced)
 {
     LoadedFile result;
     QFile file(path);
@@ -82,14 +85,27 @@ LoadedFile Document::read(const QString &path)
         return result;
     }
 
-    QStringDecoder decoder(QStringDecoder::Utf8); // strips a leading BOM
-    result.text = decoder(data);
-    if (decoder.hasError())
-        result.text = QString::fromLocal8Bit(data);
+    Encodings::Detection detected = Encodings::detect(data, fallback.isEmpty() ? Encodings::defaultFallback() : fallback);
+    if (!forced.isEmpty()) {
+        // Keep a BOM that belongs to the forced encoding out of the text.
+        const Encodings::Detection bom = Encodings::detect(data.left(4), {});
+        const bool same = bom.bom && bom.encoding == forced;
+        detected = {forced, same, same ? bom.bomLength : 0};
+    }
+    // Text never contains NUL bytes (outside UTF-16/32); nearly every binary format does, early on.
+    if (detected.encoding.isEmpty()) {
+        result.binary = true;
+        result.error = tr("It is not a text file.");
+        return result;
+    }
 
+    bool ok = true;
+    result.text = Encodings::decode(data.mid(detected.bomLength), detected.encoding, &ok);
+    result.lossy = !ok;
+    result.encoding = detected.encoding;
+    result.bom = detected.bom;
     result.path = QFileInfo(path).absoluteFilePath();
-    result.bom = data.startsWith(utf8Bom);
-    result.crlf = data.contains("\r\n");
+    result.crlf = result.text.contains(QStringLiteral("\r\n"));
     result.text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
     result.stamp = stampOf(path, data);
     result.ok = true;

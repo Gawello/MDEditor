@@ -20,7 +20,10 @@ add_library(mdcore STATIC
     src/markdown/BlockParser.cpp
     src/markdown/Entities.cpp
     src/markdown/InlineParser.cpp
+    src/markdown/LineStyle.cpp
+    src/markdown/TableEdit.cpp
     src/markdown/TableParser.cpp
+    src/syntax/Syntax.cpp
 )
 target_include_directories(mdcore PUBLIC src)
 
@@ -28,14 +31,18 @@ if(MDEDITOR_BUILD_APP)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Qml)
     qt_standard_project_setup()
 
+    add_subdirectory(third_party) # MicroTeX (math) with tinyxml2, Hunspell (spelling)
+
     # Everything but main(), so tests can link the real application code.
     qt_add_library(mdeditor_app STATIC
         src/app/AppSettings.cpp src/app/AppSettings.h
         src/app/Background.cpp src/app/Background.h
+        src/app/Bookmarks.cpp src/app/Bookmarks.h
         src/app/CloudDrive.cpp src/app/CloudDrive.h
         src/app/CloudDrivePage.cpp src/app/CloudDrivePage.h
         src/app/EditorTab.cpp src/app/EditorTab.h
         src/app/ExternalChangeBar.cpp src/app/ExternalChangeBar.h
+        src/app/FileActions.cpp src/app/FileActions.h
         src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
@@ -45,17 +52,21 @@ if(MDEDITOR_BUILD_APP)
         src/app/TabCloseButton.cpp src/app/TabCloseButton.h
         src/app/TablePicker.cpp src/app/TablePicker.h
         src/document/Document.cpp src/document/Document.h
+        src/document/Encodings.cpp src/document/Encodings.h
+        src/editor/CodeHighlighter.cpp src/editor/CodeHighlighter.h
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
         src/editor/MarkdownEditor.cpp src/editor/MarkdownEditor.h
+        src/editor/MathRenderer.cpp src/editor/MathRenderer.h
         src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
         src/plugins/PluginApi.cpp src/plugins/PluginApi.h
         src/plugins/PluginManager.cpp src/plugins/PluginManager.h
+        src/spell/SpellChecker.cpp src/spell/SpellChecker.h
         src/theme/Theme.cpp src/theme/Theme.h
         src/theme/ThemeManager.cpp src/theme/ThemeManager.h
     )
-    target_link_libraries(mdeditor_app PUBLIC mdcore Qt6::Widgets Qt6::Qml)
+    target_link_libraries(mdeditor_app PUBLIC mdcore microtex hunspell Qt6::Widgets Qt6::Qml)
 
     qt_add_executable(MDEditor WIN32 src/main.cpp)
     target_link_libraries(MDEditor PRIVATE mdeditor_app)
@@ -101,6 +112,8 @@ if(MDEDITOR_BUILD_APP)
     mdeditor_make_runnable(MDEditor)
 
     include(GNUInstallDirs)
+    include(cmake/Dictionaries.cmake)
+    mdeditor_add_dictionaries(MDEditor)
     install(TARGETS MDEditor
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         BUNDLE DESTINATION .

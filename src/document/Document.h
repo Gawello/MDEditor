@@ -16,11 +16,14 @@ struct FileStamp {
 
 struct LoadedFile {
     bool ok = false;
+    bool binary = false; // not text: an image, an archive, a program...
     QString error;
     QString path;
     QString text;
+    QString encoding; // as QStringConverter names it
     bool crlf = false;
     bool bom = false;
+    bool lossy = false; // some bytes weren't valid in `encoding` (saving would change them)
     FileStamp stamp;
 };
 
@@ -43,8 +46,8 @@ struct DiskCheck {
     FileStamp stamp;
 };
 
-// A Markdown file on disk. Remembers the encoding details of the loaded file
-// (UTF-8 BOM, CRLF line endings) so that saving doesn't rewrite every line.
+// A text file on disk. Remembers the encoding details of the loaded file (character encoding, byte order
+// mark, CRLF line endings) so that saving doesn't rewrite every line.
 class Document {
 public:
     QString filePath() const { return m_path; }
@@ -52,21 +55,33 @@ public:
     QString displayName() const;
     FileStamp stamp() const { return m_stamp; }
     void setStamp(const FileStamp &stamp) { m_stamp = stamp; }
+    // The file was renamed or moved: same contents, new path.
+    void setFilePath(const QString &path) { m_path = path; }
+
+    QString encoding() const { return m_encoding; }
+    bool hasBom() const { return m_bom; }
+    bool usesCrlf() const { return m_crlf; }
+    // Used by the next save.
+    void setEncoding(const QString &encoding, bool bom);
+    void setCrlf(bool crlf) { m_crlf = crlf; }
 
     void reset();
-    // The bytes to write for `text`, with this document's encoding details.
-    QByteArray encode(const QString &text) const;
+    // The bytes to write for `text`, with this document's encoding details. `ok` is false if some characters
+    // can't be written in the encoding (they would turn into question marks or similar).
+    QByteArray encode(const QString &text, bool *ok = nullptr) const;
     void adopt(const LoadedFile &file);
     void adopt(const SavedFile &file);
 
     // These touch the disk, which can take seconds or hang on a network drive, so they run off the GUI
     // thread. They use no Document state.
-    static LoadedFile read(const QString &path);
+    // `fallback` is the encoding for files that aren't UTF-8; `forced`, if given, is used whatever the bytes.
+    static LoadedFile read(const QString &path, const QString &fallback = {}, const QString &forced = {});
     static SavedFile write(const QString &path, const QByteArray &data);
     static DiskCheck check(const QString &path, const FileStamp &known);
 
 private:
     QString m_path;
+    QString m_encoding = QStringLiteral("UTF-8");
     bool m_crlf = false;
     bool m_bom = false;
     FileStamp m_stamp;

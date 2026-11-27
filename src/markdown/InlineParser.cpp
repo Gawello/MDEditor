@@ -39,6 +39,7 @@ public:
     InlineResult run()
     {
         codeSpansAndEscapes();
+        mathAndComments(); // before links: what's inside is TeX or hidden text, not Markdown
         links();
         autolinks();
         entities(); // after what keeps text literal, before emphasis so "&ast;" can't open any
@@ -269,6 +270,74 @@ private:
                 r.links.push_back({i, end, i, end, i, end});
             }
             i = end > i ? end : i + 1;
+        }
+    }
+
+    // The next unlocked occurrence of `delimiter` at or after `from`, or -1.
+    int findUnlocked(std::u16string_view delimiter, int from) const
+    {
+        for (int j = from; j + int(delimiter.size()) <= n; ++j) {
+            if (!locked[j] && startsWith(s, j, delimiter))
+                return j;
+        }
+        return -1;
+    }
+
+    // Marks a span whose contents are taken out of Markdown: delimiters are markers, the content gets `style`.
+    void claim(int open, int contentStart, int contentEnd, int close, std::uint16_t style)
+    {
+        for (int k = open; k < close; ++k) {
+            r.styles[k] = std::uint16_t((k < contentStart || k >= contentEnd ? Marker : 0) | style);
+            locked[k] = true;
+        }
+    }
+
+    // %%comment%%, $$display math$$ and $inline math$ (pandoc's rule: no space inside the dollars, and the
+    // closing one not followed by a digit, so "$5 and $6" stays text). Escaped dollars are locked already.
+    void mathAndComments()
+    {
+        int i = 0;
+        while (i < n) {
+            if (locked[i]) {
+                ++i;
+                continue;
+            }
+            if (startsWith(s, i, u"%%")) {
+                const int close = findUnlocked(u"%%", i + 2);
+                if (close >= 0) {
+                    claim(i, i + 2, close, close + 2, Comment);
+                    i = close + 2;
+                    continue;
+                }
+            }
+            if (startsWith(s, i, u"$$")) {
+                const int close = findUnlocked(u"$$", i + 2);
+                if (close > i + 2) {
+                    claim(i, i + 2, close, close + 2, Math);
+                    r.math.push_back({i, close + 2, i + 2, close, true});
+                    i = close + 2;
+                    continue;
+                }
+                i += 2; // "$$" without a closing one is text
+                continue;
+            }
+            if (s[i] == u'$' && i + 1 < n && !isWs(s[i + 1]) && s[i + 1] != u'$') {
+                int close = -1;
+                for (int j = i + 1; j < n; ++j) {
+                    if (s[j] != u'$' || locked[j])
+                        continue;
+                    if (!isWs(s[j - 1]) && !(j + 1 < n && s[j + 1] >= u'0' && s[j + 1] <= u'9'))
+                        close = j;
+                    break;
+                }
+                if (close > i + 1) {
+                    claim(i, i + 1, close, close + 1, Math);
+                    r.math.push_back({i, close + 1, i + 1, close, false});
+                    i = close + 1;
+                    continue;
+                }
+            }
+            ++i;
         }
     }
 

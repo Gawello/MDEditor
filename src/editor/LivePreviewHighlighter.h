@@ -29,6 +29,14 @@ struct EntityGlyph {
     QColor color; // invalid: the default text color
 };
 
+// A TeX formula shown in place of its source: inline at `position` (the slot left for it), or a whole
+// display block.
+struct MathGlyph {
+    int position = 0;
+    QString tex;
+    bool display = false;
+};
+
 // Parsed block structure, attached to every QTextBlock so the editor can paint
 // decorations (quote bars, bullets, checkboxes, code backgrounds, tables) without re-parsing.
 class BlockData : public QTextBlockUserData {
@@ -38,6 +46,9 @@ public:
     int imageWidth = 0;  // requested width (![[img.png|300]], ![alt|300](img.png)), 0 = natural
     bool imageShown = false; // the line is laid out to show the image instead of its text
     std::vector<EntityGlyph> entities;
+    std::vector<MathGlyph> math; // inline formulas
+    QString mathBlock;           // TeX of a display block drawn on this line ($$ ... $$)
+    bool mathShown = false;      // the line is laid out to show `mathBlock`
 };
 
 // Vertical space above and below an image rendered in place of its line.
@@ -46,11 +57,20 @@ constexpr qreal imageVerticalPadding = 6;
 // Display size for an image target (path relative to the document) and requested width;
 // an empty size when the image can't be loaded.
 using ImageSizeProvider = std::function<QSizeF(const QString &target, int requestedWidth)>;
+// Size and baseline (from the top) of a rendered formula; an empty size when formulas can't be drawn.
+struct MathMetrics {
+    QSizeF size;
+    qreal baseline = 0;
+};
+using MathSizeProvider = std::function<MathMetrics(const QString &tex, bool display)>;
 
 md::BlockType blockType(const QTextBlock &block);
 bool isTableBlock(const QTextBlock &block);
 QTextBlock tableHeader(QTextBlock block); // first block of the table containing `block`
 QTextBlock tableEnd(QTextBlock block);    // last block of the table containing `block`
+// The lines of the $$ math block containing `block` (only meaningful when blockType(block) is a math type).
+QTextBlock mathBlockStart(QTextBlock block);
+QTextBlock mathBlockEnd(QTextBlock block);
 
 // Formats Markdown in place: syntax markers are hidden everywhere except in the
 // block containing the cursor (the "active" block), where they are shown dimmed.
@@ -61,11 +81,19 @@ class LivePreviewHighlighter : public QSyntaxHighlighter {
 public:
     LivePreviewHighlighter(QTextDocument *document, const EditorTheme *theme);
 
+    // Detaching clears every format and the parsed block data, leaving plain text; attaching
+    // highlights the whole document again.
+    void setAttached(bool attached);
+    bool isAttached() const { return document() != nullptr; }
+
     // Returns true if anything had to be re-highlighted.
     bool setActiveBlock(int blockNumber);
     int activeBlock() const { return m_activeBlock; }
 
     void setImageSizeProvider(ImageSizeProvider provider) { m_imageSize = std::move(provider); }
+    void setMathSizeProvider(MathSizeProvider provider) { m_mathSize = std::move(provider); }
+    // The cursor's position in the document, so the word being typed isn't marked as misspelled.
+    void setCaretProvider(std::function<int()> provider) { m_caret = std::move(provider); }
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -77,14 +105,20 @@ private:
     void showEntity(const md::EntityRange &entity, int offset);
     void recheckPreviousBlock(const QString &text);
     bool highlightImageLine(const QString &text, BlockData *data, bool active);
+    void highlightMathBlock(const QString &text, const md::BlockInfo &info, BlockData *data, bool active);
+    void showMath(const QString &text, const md::MathRange &math, int offset);
+    QTextCharFormat tallSlot(qreal height) const;
     QTextCharFormat dimmed(QTextCharFormat format) const;
     QTextCharFormat invisible(QTextCharFormat format) const;
     QTextCharFormat collapsed(QTextCharFormat format) const;
     QTextCharFormat codeFormat() const;
 
     const EditorTheme *m_theme;
+    QTextDocument *m_document; // also while detached
     ImageSizeProvider m_imageSize;
+    MathSizeProvider m_mathSize;
+    std::function<int()> m_caret;
     int m_activeBlock = -1;
-    int m_tableFirst = -1; // block range of the table containing the cursor, if any
+    int m_tableFirst = -1; // block range of the table or math block containing the cursor, if any
     int m_tableLast = -1;
 };

@@ -1,5 +1,7 @@
 #include "app/MainWindow.h"
+#include "editor/MathRenderer.h"
 #include "plugins/PluginManager.h"
+#include "spell/SpellChecker.h"
 #include "theme/ThemeManager.h"
 
 #include <QApplication>
@@ -27,11 +29,13 @@ int main(int argc, char *argv[])
     parser.process(app);
 
     ThemeManager::instance().initialize();
+    SpellChecker::instance().reload(); // in the background; text gets marked once it's loaded
     MainWindow window;
     window.show();
     window.restoreSession(parser.positionalArguments());
 
     const int result = app.exec();
     PluginManager::instance().shutdown();
+    MathRenderer::shutdown();
     return result;
 }

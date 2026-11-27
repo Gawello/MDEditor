@@ -112,6 +112,12 @@ TEST_CASE(block_state_roundtrip)
     CHECK(backtick.fenceChar == u'`');
     CHECK(backtick.fenceLength == 3);
 
+    // The code highlighter's state rides along with the fence and keeps it an even value >= 12.
+    const int withCode = md::BlockState{u'~', 4, md::BlockState::Table::None, 0x7fff}.encode();
+    CHECK(withCode >= 12 && withCode % 2 == 0);
+    const auto code = md::BlockState::decode(withCode);
+    CHECK(code.code == 0x7fff && code.fenceLength == 4 && code.fenceChar == u'~');
+
     using Table = md::BlockState::Table;
     for (const Table table : {Table::AfterHeader, Table::Body}) {
         const auto t = md::BlockState::decode(md::BlockState{0, 0, table}.encode());

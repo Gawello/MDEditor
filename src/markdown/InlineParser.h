@@ -18,6 +18,16 @@ enum Style : std::uint16_t {
     LinkUrl   = 1 << 6,
     Highlight = 1 << 7,
     Entity    = 1 << 8, // character reference, shown as what it stands for (see InlineResult::entities)
+    Comment   = 1 << 9, // %%Obsidian comment%%
+    Math      = 1 << 10, // $inline$ or $$display$$ TeX (see InlineResult::math)
+};
+
+struct MathRange {
+    int start = 0; // including the dollar signs, [start, end)
+    int end = 0;
+    int contentStart = 0; // the TeX source, [contentStart, contentEnd)
+    int contentEnd = 0;
+    bool display = false; // $$...$$
 };
 
 struct LinkRange {
@@ -41,6 +51,7 @@ struct InlineResult {
     std::vector<std::uint16_t> styles; // one entry per UTF-16 code unit
     std::vector<LinkRange> links;
     std::vector<EntityRange> entities; // in text order
+    std::vector<MathRange> math;       // in text order
 };
 
 InlineResult parseInline(std::u16string_view text);

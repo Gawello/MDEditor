@@ -10,15 +10,31 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 
 - Live preview: headings, **bold**, *italic*, ~~strikethrough~~, ==highlight==, `inline code`, fenced code blocks,
   quotes, bullet/ordered lists, task lists with clickable checkboxes, horizontal rules
+- Any text file: Markdown files open with the live preview, other text files (code, config, logs, `.txt`) as
+  plain text in a monospace font. View → Live Preview (Ctrl+E) switches per tab, View → Word Wrap (Alt+Z) too.
+  Files that aren't text (images, PDFs, archives) open in their default application
+- Obsidian-style right-click menu: open or copy a link, Add Link / Add External Link (Ctrl+K), Format (bold,
+  italic, strikethrough, highlight, code, Clear Formatting), Paragraph (lists, task list, headings 1–6, body,
+  quote), Insert (table, callout, code block, horizontal rule, footnote, symbol), Paste as Plain Text
+  (Ctrl+Shift+V). Inside a table: add, duplicate, move and delete rows and columns, align a column, sort by a
+  column, delete the table
 - Tables rendered as an aligned grid (column alignment, inline formatting in cells); click a cell to edit
   the Markdown, Tab / Shift+Tab move between cells, Enter adds a row. The table button (top right) or
-  Format → Insert Table… opens a Word-style grid to insert an empty table
-- Symbols and emoji: the Ω button next to the table button, or Format → Insert Symbol…, opens a drop-down that stays
+  Format → Insert → Table… opens a Word-style grid to insert an empty table
+- Symbols and emoji: the Ω button next to the table button, or Format → Insert → Symbol or Emoji…, opens a drop-down that stays
   open while you insert several in a row, and closes when you click elsewhere, press Esc or leave the application
 - Images: a line holding only `![alt](path)` or `![[path]]` shows the image, scaled to the text column.
   Set a width with `![[img.png|300]]` or `![alt|300](img.png)`. Paths are relative to the Markdown file.
   Dropping or pasting image files inserts links to them; pasting a screenshot or a copied image saves it
   as `assets/pasted-image-<timestamp>.png` next to the note and links it
+- Math: `$inline$` and `$$display$$` TeX formulas rendered in place (MicroTeX), source shown while editing;
+  `%%comments%%` dimmed. Format → Math / Comment, Insert → Math Block
+- Syntax colors for code files and fenced code blocks (C/C++, C#, Java/Kotlin, JS/TS, Python, Go, Rust, SQL,
+  shell, PowerShell, PHP, Ruby, Lua, CMake, Makefile, JSON, YAML, INI/TOML, CSS, XML/HTML, diff)
+- Any encoding: UTF-8/16 with or without BOM and legacy code pages (Windows-1250 etc.) are detected and saved
+  back unchanged; the status bar shows encoding and line endings and can reopen or save in another
+- Spell checking (Hunspell) in several languages at once, Polish and English dictionaries included:
+  suggestions, Add to Dictionary and Ignore in the right-click menu; languages in Settings → Editor
 - Links: `[text](url)`, bare URLs and `[[wiki links]]`. Ctrl+click opens them (relative links resolve next to the current file)
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
@@ -26,7 +42,16 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   groups, all matches highlighted, Replace All as one undo step
 - Tabs (Ctrl+N new, Ctrl+W or middle click to close, Ctrl+Tab to switch); open tabs are restored on the next start
 - File → Open Recent with the last 10 files
-- Optional folder panel (Ctrl+Shift+E) to browse any folder, without indexing anything
+- Optional folder panel (Ctrl+Shift+E) to browse any folder, without indexing anything. Its right-click menu
+  creates notes and folders, makes a copy, moves, renames (also F2, in place), deletes to the trash (also Del),
+  copies paths and shows the file in the file manager; open tabs follow renamed and deleted files
+- Tab right-click menu: close others / to the right / all, split right / down, move to the other pane, live
+  preview, copy path, reveal in the folder panel, show in the file manager, open in the default app, bookmark,
+  rename, move, delete
+- Split view: two panes side by side or one above the other (View → Split Right / Down); the same note can be
+  open in both, edits show in both at once; the layout is restored on the next start
+- Bookmarks above the folder tree (right-click → Bookmark on files, folders and tabs; drag to reorder); drag
+  files and folders in the tree to move them, or Move To…
 - Files are saved exactly as typed: UTF-8 BOM and CRLF line endings are preserved, writes are atomic
 - Settings (Ctrl+,): theme, editor font and size, line length, indentation, pasted images folder,
   formatting and plugins

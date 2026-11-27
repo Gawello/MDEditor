@@ -2,6 +2,8 @@
 
 #include "markdown/TableParser.h"
 
+#include <algorithm>
+
 namespace md {
 
 namespace {
@@ -36,11 +38,16 @@ int skipWs(std::u16string_view s, int from)
 
 } // namespace
 
-// Fences encode as (length << 2) | tilde bit, i.e. even values >= 12; table states use 1 and 3.
+// Fences encode as (code << 16) | (length << 2) | tilde bit, i.e. even values >= 12; table states use 1 and 3;
+// math and comment blocks 5 and 7.
 int BlockState::encode() const
 {
+    if (block == Block::Math)
+        return 5;
+    if (block == Block::Comment)
+        return 7;
     if (inFence())
-        return (fenceLength << 2) | (fenceChar == u'~' ? 2 : 0);
+        return ((code & 0x7fff) << 16) | (std::min(fenceLength, 0x3fff) << 2) | (fenceChar == u'~' ? 2 : 0);
     if (table == Table::AfterHeader)
         return 1;
     if (table == Table::Body)
@@ -56,7 +63,12 @@ BlockState BlockState::decode(int state)
         return {0, 0, Table::AfterHeader};
     if (state == 3)
         return {0, 0, Table::Body};
-    return {(state & 2) ? u'~' : u'`', state >> 2, Table::None};
+    if (state == 5 || state == 7) {
+        BlockState s;
+        s.block = state == 5 ? Block::Math : Block::Comment;
+        return s;
+    }
+    return {(state & 2) ? u'~' : u'`', (state & 0xffff) >> 2, Table::None, state >> 16};
 }
 
 LineResult parseLine(std::u16string_view line, BlockState state, std::optional<std::u16string_view> nextLine)
@@ -83,6 +95,21 @@ LineResult parseLine(std::u16string_view line, BlockState state, std::optional<s
         return r;
     }
     r.next.table = BlockState::Table::None;
+
+    // Inside $$ math or a %% comment: everything up to the closing delimiter belongs to it.
+    if (state.block != BlockState::Block::None) {
+        const bool math = state.block == BlockState::Block::Math;
+        const std::u16string_view close = math ? u"$$" : u"%%";
+        b.markerStart = 0;
+        b.contentStart = 0;
+        b.type = math ? BlockType::MathLine : BlockType::CommentLine;
+        if (line.find(close) != std::u16string_view::npos) {
+            if (math)
+                b.type = BlockType::MathClose;
+            r.next.block = BlockState::Block::None;
+        }
+        return r;
+    }
 
     if (state.inFence()) {
         if (ind <= 3) {
@@ -117,6 +144,34 @@ LineResult parseLine(std::u16string_view line, BlockState state, std::optional<s
     }
 
     const char16_t c = line[ind];
+
+    // $$ display math: alone on its line ("$$ x $$"), or opening a block that a later "$$" closes.
+    if (ind <= 3 && line.substr(ind).substr(0, 2) == u"$$") {
+        size_t end = n;
+        while (end > size_t(ind) && isWs(line[end - 1]))
+            --end;
+        const std::u16string_view rest = line.substr(ind + 2, end - ind - 2);
+        const size_t close = rest.find(u"$$");
+        if (close == std::u16string_view::npos) {
+            b.type = BlockType::MathOpen;
+            b.markerLength = 2;
+            b.contentStart = ind + 2;
+            r.next.block = BlockState::Block::Math;
+            return r;
+        }
+        if (close + 2 == rest.size() && close > 0) {
+            b.type = BlockType::MathSingle;
+            b.markerLength = 2;
+            b.contentStart = ind + 2;
+            return r;
+        }
+    }
+    // %% comment over several lines: an opening %% with no closing one on the same line.
+    if (ind <= 3 && line.substr(ind).substr(0, 2) == u"%%" && line.find(u"%%", ind + 2) == std::u16string_view::npos) {
+        b.type = BlockType::CommentLine;
+        r.next.block = BlockState::Block::Comment;
+        return r;
+    }
 
     if (ind <= 3 && (c == u'`' || c == u'~')) {
         const int len = runLength(line, ind, c);

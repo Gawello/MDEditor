@@ -18,6 +18,10 @@ public:
     static constexpr auto readableWidthKey = "editor/readableWidth";
     static constexpr auto indentSizeKey = "editor/indentSize";
     static constexpr auto attachmentsFolderKey = "editor/attachmentsFolder";
+    static constexpr auto fallbackEncodingKey = "editor/fallbackEncoding";
+    // Comma-separated dictionary codes ("pl_PL,en_US"); empty: no spell checking; absent: the default.
+    static constexpr auto spellLanguagesKey = "spell/languages";
+    static constexpr auto bookmarksKey = "bookmarks"; // absolute paths, in the user's order
     static constexpr auto formatOnSaveKey = "format/onSave";
     static constexpr auto enabledPluginsKey = "plugins/enabled";
     static constexpr auto driveFolderKey = "drive/folder";
@@ -32,6 +36,8 @@ public:
     int readableWidth() const { return value(readableWidthKey, 100).toInt(); } // characters, 0 = full width
     int indentSize() const { return value(indentSizeKey, 4).toInt(); }
     QString attachmentsFolder() const { return value(attachmentsFolderKey, QStringLiteral("assets")).toString(); }
+    // For files that aren't valid UTF-8 and have no byte order mark.
+    QString fallbackEncoding() const;
     bool formatOnSave() const { return value(formatOnSaveKey, false).toBool(); }
     QStringList enabledPlugins() const { return value(enabledPluginsKey).toStringList(); }
 

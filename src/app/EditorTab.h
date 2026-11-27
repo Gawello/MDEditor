@@ -3,6 +3,7 @@
 #include "document/Document.h"
 
 #include <QFutureWatcher>
+#include <QPointer>
 #include <QWidget>
 
 class ExternalChangeBar;
@@ -15,6 +16,7 @@ class EditorTab : public QWidget {
 
 public:
     explicit EditorTab(QWidget *parent = nullptr);
+    ~EditorTab() override { unlinkTwin(); }
 
     MarkdownEditor *editor() const { return m_editor; }
     FindBar *findBar() const { return m_findBar; }
@@ -28,15 +30,34 @@ public:
     enum class SaveResult {
         Saved,
         Failed,
-        Conflict // nothing written: the file changed on disk, see conflictState()
+        Conflict,   // nothing written: the file changed on disk, see conflictState()
+        Unencodable // nothing written: some characters don't exist in the file's encoding
     };
 
     // Both keep the window alive while the disk works, and may show a "waiting" dialog.
-    bool load(const QString &path, QString &error);
+    // `binary` is set when the file isn't text (and so wasn't loaded).
+    bool load(const QString &path, QString &error, bool *binary = nullptr);
     // `overwrite` skips the check for changes made elsewhere.
     SaveResult save(const QString &path, QString &error, bool overwrite = false);
-    bool reload(QString &error);
+    // With `encoding`, the file is read in that encoding whatever its bytes look like.
+    bool reload(QString &error, const QString &encoding = {});
+
+    QString encoding() const { return m_document.encoding(); }
+    bool hasBom() const { return m_document.hasBom(); }
+    bool usesCrlf() const { return m_document.usesCrlf(); }
+    // Take effect on the next save, so they mark the document modified.
+    void setEncoding(const QString &encoding, bool bom);
+    void setCrlf(bool crlf);
     DiskState conflictState() const { return m_conflictState; }
+
+    // The file was renamed or moved on disk by the app: keeps the contents and the modified state.
+    void setFilePath(const QString &path);
+
+    // The same file shown in another pane: `twin` starts as a copy of this tab, and from then on every edit in
+    // either is mirrored to the other, and a save or reload in one counts for both.
+    void openTwin(EditorTab *twin);
+    EditorTab *twin() const { return m_twin; }
+    void unlinkTwin();
 
     // Compares the file with what this tab last read or wrote, without blocking. An unmodified tab
     // reloads by itself; one with unsaved changes asks through a bar above the editor.
@@ -48,7 +69,12 @@ signals:
     void diskCheckFinished();
 
 private:
+    void mirror(int position, int removed, int added);
+    void shareFileState(); // after a save or reload: the twin has the same file version now
+
     MarkdownEditor *m_editor;
+    QPointer<EditorTab> m_twin;
+    bool m_mirroring = false;
     void handleDiskCheck();
     void keepMyVersion();
     QString waitLabel() const;

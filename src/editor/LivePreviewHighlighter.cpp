@@ -1,5 +1,7 @@
 #include "editor/LivePreviewHighlighter.h"
 
+#include "editor/CodeHighlighter.h"
+
 #include "markdown/InlineParser.h"
 #include "markdown/TableParser.h"
 
@@ -40,20 +42,61 @@ QTextBlock tableEnd(QTextBlock block)
     return block;
 }
 
+QTextBlock mathBlockStart(QTextBlock block)
+{
+    while (blockType(block) != BlockType::MathOpen && blockType(block) != BlockType::MathSingle
+           && block.previous().isValid() && md::isMathType(blockType(block.previous())))
+        block = block.previous();
+    return block;
+}
+
+QTextBlock mathBlockEnd(QTextBlock block)
+{
+    while (blockType(block) != BlockType::MathClose && blockType(block) != BlockType::MathSingle
+           && block.next().isValid() && md::isMathType(blockType(block.next()))
+           && blockType(block.next()) != BlockType::MathOpen && blockType(block.next()) != BlockType::MathSingle)
+        block = block.next();
+    return block;
+}
+
 LivePreviewHighlighter::LivePreviewHighlighter(QTextDocument *document, const EditorTheme *theme)
     : QSyntaxHighlighter(document)
     , m_theme(theme)
+    , m_document(document)
 {
+}
+
+void LivePreviewHighlighter::setAttached(bool attached)
+{
+    if (attached == isAttached())
+        return;
+    m_activeBlock = -1;
+    m_tableFirst = -1;
+    m_tableLast = -1;
+    if (attached) {
+        setDocument(m_document); // highlights everything
+        return;
+    }
+    setDocument(nullptr); // clears the formats
+    for (QTextBlock block = m_document->firstBlock(); block.isValid(); block = block.next()) {
+        block.setUserData(nullptr);
+        block.setUserState(-1);
+    }
 }
 
 bool LivePreviewHighlighter::setActiveBlock(int blockNumber)
 {
+    if (!isAttached())
+        return false;
     int first = -1;
     int last = -1;
     const QTextBlock block = document()->findBlockByNumber(blockNumber);
     if (isTableBlock(block)) {
         first = tableHeader(block).blockNumber();
         last = tableEnd(block).blockNumber();
+    } else if (md::isMathType(blockType(block))) { // a formula shows its source as a whole, like a table
+        first = mathBlockStart(block).blockNumber();
+        last = mathBlockEnd(block).blockNumber();
     }
     if (blockNumber == m_activeBlock && first == m_tableFirst && last == m_tableLast)
         return false;
@@ -126,8 +169,22 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     const QTextBlock next = currentBlock().next();
     const QString nextText = next.isValid() ? next.text() : QString();
     const auto nextLine = next.isValid() ? std::optional(toView(nextText)) : std::nullopt;
-    const auto result = md::parseLine(toView(text), md::BlockState::decode(previousBlockState()), nextLine);
-    setCurrentBlockState(result.next.encode());
+    const md::BlockState previous = md::BlockState::decode(previousBlockState());
+    const auto result = md::parseLine(toView(text), previous, nextLine);
+    md::BlockState nextState = result.next;
+
+    // Code in fences is colored by its language (from the info string), carried in the state's `code` bits:
+    // language << stateBits | what the previous code line left open.
+    constexpr int stateMask = (1 << syntax::stateBits) - 1;
+    int codeLanguage = 0;
+    if (result.info.type == BlockType::FenceOpen) {
+        nextState.code = syntax::languageForName(toView(text).substr(result.info.contentStart)) << syntax::stateBits;
+    } else if (result.info.type == BlockType::CodeLine) {
+        codeLanguage = previous.code >> syntax::stateBits;
+        nextState.code = previous.code; // set below once the line is colored
+    }
+    const int codeState = previous.code & stateMask;
+    setCurrentBlockState(nextState.encode()); // code lines set it again once colored
 
     auto *data = static_cast<BlockData *>(currentBlockUserData());
     if (!data) {
@@ -139,6 +196,9 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     data->imageWidth = 0;
     data->imageShown = false;
     data->entities.clear();
+    data->math.clear();
+    data->mathBlock.clear();
+    data->mathShown = false;
     recheckPreviousBlock(text);
 
     const md::BlockInfo &b = result.info;
@@ -155,12 +215,34 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     case BlockType::FenceClose:
         setFormat(0, length, dimmed(codeFormat()));
         return;
-    case BlockType::CodeLine:
+    case BlockType::CodeLine: {
         setFormat(0, length, codeFormat());
+        if (codeLanguage) {
+            const int after = applySyntax(codeLanguage, text, codeState, *m_theme, codeFormat(),
+                                          [this](int start, int count, const QTextCharFormat &format) {
+                                              setFormat(start, count, format);
+                                          });
+            nextState.code = (codeLanguage << syntax::stateBits) | after;
+        }
+        setCurrentBlockState(nextState.encode());
         return;
+    }
     case BlockType::HorizontalRule:
         setFormat(0, length, active ? dimmed({}) : invisible({}));
         return;
+    case BlockType::MathOpen:
+    case BlockType::MathLine:
+    case BlockType::MathClose:
+    case BlockType::MathSingle:
+        highlightMathBlock(text, b, data, active);
+        return;
+    case BlockType::CommentLine: {
+        QTextCharFormat comment;
+        comment.setForeground(m_theme->faint);
+        comment.setFontItalic(true);
+        setFormat(0, length, comment);
+        return;
+    }
     case BlockType::TableHeader:
     case BlockType::TableDelimiter:
     case BlockType::TableRow:
@@ -203,6 +285,17 @@ void LivePreviewHighlighter::highlightBlock(const QString &text)
     if (b.contentStart < length) {
         setFormat(b.contentStart, length - b.contentStart, content);
         applyInline(text.mid(b.contentStart), b.contentStart, content, active);
+
+        // Spelling: prose only, not code, links, math, comments or hidden markers.
+        const md::InlineResult parsed = md::parseInline(toView(text).substr(b.contentStart));
+        constexpr std::uint16_t notProse = md::Marker | md::Code | md::Link | md::LinkUrl | md::Math | md::Entity
+            | md::Comment;
+        const int contentStart = b.contentStart;
+        underlineMisspelled(
+            text, currentBlock().position(), m_caret ? m_caret() : -1,
+            [&](int i) { return i < contentStart || (parsed.styles[i - contentStart] & notProse); },
+            [this](int i) { return format(i); },
+            [this](int start, int count, const QTextCharFormat &f) { setFormat(start, count, f); });
     }
 }
 
@@ -302,6 +395,8 @@ void LivePreviewHighlighter::recheckPreviousBlock(const QString &text)
 
     const int number = previous.blockNumber();
     QTimer::singleShot(0, this, [this, number] {
+        if (!isAttached())
+            return; // switched to plain text meanwhile
         const QTextBlock block = document()->findBlockByNumber(number);
         if (block.isValid())
             rehighlightBlock(block);
@@ -344,7 +439,15 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
                 format.setForeground(m_theme->accent);
                 format.setFontUnderline(true);
             }
-            if (style & md::Marker)
+            if (style & md::Math) {
+                format.setFontFamilies(m_theme->monoFamilies);
+                format.setForeground(m_theme->codeText);
+            }
+            if (style & md::Comment) { // stays visible, %% included, so it's clear what won't be published
+                format.setForeground(m_theme->faint);
+                format.setFontItalic(true);
+            }
+            if ((style & md::Marker) && !(style & md::Comment))
                 format = active ? dimmed(format) : collapsed(format);
             setFormat(offset + i, j - i, format);
         }
@@ -354,7 +457,104 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
     if (!active) {
         for (const md::EntityRange &entity : parsed.entities)
             showEntity(entity, offset);
+        for (const md::MathRange &math : parsed.math)
+            showMath(text, math, offset);
     }
+}
+
+// An invisible character whose font makes its line `height` pixels tall.
+QTextCharFormat LivePreviewHighlighter::tallSlot(qreal height) const
+{
+    QFont probe = m_theme->baseFont;
+    probe.setPointSizeF(100);
+    const QFontMetricsF metrics(probe);
+    QTextCharFormat tall = invisible({});
+    tall.setFontPointSize(100 * height / (metrics.ascent() + metrics.descent()));
+    return tall;
+}
+
+// Like a character reference: the opening '$' becomes an invisible slot as wide as the formula (and as tall,
+// if it's taller than the line), the rest collapses, and the editor paints the formula over the slot.
+void LivePreviewHighlighter::showMath(const QString &text, const md::MathRange &math, int offset)
+{
+    if (!m_mathSize)
+        return;
+    const QString tex = text.mid(math.contentStart, math.contentEnd - math.contentStart);
+    const MathMetrics metrics = m_mathSize(tex, math.display);
+    if (metrics.size.isEmpty())
+        return; // stays as source
+
+    const int position = offset + math.start;
+    const QTextCharFormat shown = format(position);
+    QFont font = shown.font().resolve(m_theme->baseFont);
+    QTextCharFormat slot = invisible(shown);
+    const QFontMetricsF line(font);
+    if (metrics.size.height() > line.ascent() + line.descent()) {
+        slot = tallSlot(metrics.size.height());
+        font.setPointSizeF(slot.fontPointSize());
+    }
+    slot.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    slot.setFontLetterSpacing(metrics.size.width() - QFontMetricsF(font).horizontalAdvance(u'$'));
+    setFormat(position, 1, slot);
+    setFormat(position + 1, math.end - math.start - 1, collapsed(shown));
+
+    if (auto *data = static_cast<BlockData *>(currentBlockUserData()))
+        data->math.push_back({position, tex, math.display});
+}
+
+// $$ blocks: the source while the cursor is in the block; otherwise the first line takes the height of
+// the rendered formula and the rest of the block collapses.
+void LivePreviewHighlighter::highlightMathBlock(const QString &text, const md::BlockInfo &info, BlockData *data,
+                                                bool active)
+{
+    const int length = int(text.size());
+    QTextCharFormat source = codeFormat();
+    source.setForeground(m_theme->codeText);
+
+    QString tex;
+    if (!active && m_mathSize) {
+        if (info.type == BlockType::MathSingle) {
+            const int open = int(text.indexOf(QStringLiteral("$$")));
+            const int close = int(text.lastIndexOf(QStringLiteral("$$")));
+            tex = text.mid(open + 2, close - open - 2);
+        } else if (info.type == BlockType::MathOpen) {
+            // The block's text comes from the following lines, which aren't highlighted yet.
+            QStringList lines{text.mid(info.contentStart)};
+            for (QTextBlock b = currentBlock().next(); b.isValid(); b = b.next()) {
+                const QString line = b.text();
+                const int close = int(line.indexOf(QStringLiteral("$$")));
+                lines << (close < 0 ? line : line.left(close));
+                if (close >= 0)
+                    break;
+            }
+            tex = lines.join(u'\n');
+        }
+    }
+
+    if (info.type == BlockType::MathOpen || info.type == BlockType::MathSingle) {
+        const MathMetrics metrics = tex.trimmed().isEmpty() ? MathMetrics() : m_mathSize(tex, true);
+        if (!metrics.size.isEmpty()) {
+            setFormat(0, length, collapsed({}));
+            setFormat(0, 1, tallSlot(metrics.size.height() + 2 * imageVerticalPadding));
+            data->mathBlock = tex;
+            data->mathShown = true;
+            return;
+        }
+    } else if (!active && m_mathSize) {
+        // Lines of a block drawn on its first line. A block that can't be drawn keeps its source: then the
+        // first line wasn't collapsed, and neither are these.
+        const QTextBlock start = mathBlockStart(currentBlock());
+        const auto *first = static_cast<const BlockData *>(start.userData());
+        if (first && first->mathShown) {
+            setFormat(0, length, collapsed({}));
+            return;
+        }
+    }
+
+    setFormat(0, length, source);
+    // The $$ delimiters are dimmed like other markers.
+    for (int at = int(text.indexOf(QStringLiteral("$$"))); at >= 0; at = int(text.indexOf(QStringLiteral("$$"), at + 2)))
+        setFormat(at, 2, dimmed(source));
 }
 
 // The text can't change, so the reference keeps its characters: '&' becomes an invisible slot as wide as

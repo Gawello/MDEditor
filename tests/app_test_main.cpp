@@ -1,4 +1,5 @@
 #include "TestHarness.h"
+#include "editor/MathRenderer.h"
 #include "plugins/PluginManager.h"
 #include "theme/ThemeManager.h"
 
@@ -21,6 +22,7 @@ int main(int argc, char *argv[])
     std::cout << test::registry().size() << " test cases, " << test::failures() << " failed checks\n";
 
     PluginManager::instance().shutdown();
+    MathRenderer::shutdown();
     QSettings().clear();
     return test::failures() == 0 ? 0 : 1;
 }

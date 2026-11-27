@@ -1,0 +1,39 @@
+diff --git a/src/platform/qt/graphic_qt.cpp b/src/platform/qt/graphic_qt.cpp
+index 2d1a8a4..806a066 100644
+--- a/src/platform/qt/graphic_qt.cpp
++++ b/src/platform/qt/graphic_qt.cpp
+@@ -296,13 +296,29 @@ void Graphics2D_qt::drawChar(wchar_t c, float x, float y) {
+ 
+ void Graphics2D_qt::drawText(const std::wstring& t, float x, float y) {
+ 
+-  _painter->setFont(_font->getQFont());
+-
+   QString text = wstring_to_QString(t);
+-  //qInfo() << "text" << x << y << text << text.toLocal8Bit();
+-  //for(size_t i=0; i<t.size(); ++i)
+-  //  qInfo() << 'v' << int(t[i]);
+ 
++  // MDEditor: TeX fonts are about 1pt, enlarged by the painter's scale. FreeType renders such tiny glyphs
++  // badly or crashes (Qt 6.10), so draw at the final size without the scale instead.
++  const QTransform transform = _painter->worldTransform();
++  const qreal sx = transform.m11();
++  const qreal sy = transform.m22();
++  if (sx > 0 && sy > 0 && transform.m12() == 0 && transform.m21() == 0) {
++    QFont font = _font->getQFont();
++    // TeX metrics are in pixels (device units); a point size would be dpi / 72 times too big.
++    const int dpi = _painter->device() ? _painter->device()->logicalDpiY() : 72;
++    font.setPointSizeF(font.pointSizeF() * sy * 72.0 / dpi);
++    if (sx != sy)
++      font.setStretch(qRound(100 * sx / sy));
++    _painter->save();
++    _painter->setWorldTransform(QTransform(1, 0, 0, 1, transform.dx(), transform.dy()));
++    _painter->setFont(font);
++    _painter->drawText(QPointF(x * sx, y * sy), text);
++    _painter->restore();
++    return;
++  }
++
++  _painter->setFont(_font->getQFont());
+   _painter->drawText(QPointF(x, y), text);
+ }
+ 

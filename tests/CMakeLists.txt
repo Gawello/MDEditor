@@ -5,17 +5,22 @@ add_executable(mdcore_tests
     test_entities.cpp
     test_table_parser.cpp
     test_formatters.cpp
+    test_line_style.cpp
+    test_table_edit.cpp
+    test_syntax.cpp
+    test_math_comments.cpp
 )
 target_link_libraries(mdcore_tests PRIVATE mdcore)
 add_test(NAME mdcore_tests COMMAND mdcore_tests)
 
 # Application-level tests (Qt, run offscreen): plugins and example plugins.
 if(TARGET mdeditor_app)
-    add_executable(app_tests app_test_main.cpp test_plugins.cpp test_find.cpp test_table_insert.cpp test_prettify.cpp test_external_changes.cpp test_cloud_drive.cpp test_entity_rendering.cpp test_symbol_picker.cpp)
+    add_executable(app_tests app_test_main.cpp test_plugins.cpp test_find.cpp test_table_insert.cpp test_prettify.cpp test_external_changes.cpp test_cloud_drive.cpp test_entity_rendering.cpp test_symbol_picker.cpp test_context_menu.cpp test_encodings.cpp test_syntax_highlighting.cpp test_math_rendering.cpp test_spelling.cpp test_split.cpp)
     target_link_libraries(app_tests PRIVATE mdeditor_app)
     target_compile_definitions(app_tests PRIVATE
         MDEDITOR_EXAMPLE_PLUGINS="${PROJECT_SOURCE_DIR}/examples/plugins")
     mdeditor_make_runnable(app_tests NO_QT_CONF) # built next to MDEditor, which writes qt.conf
+    mdeditor_copy_dictionaries(app_tests)
     add_test(NAME app_tests COMMAND app_tests)
     set_tests_properties(app_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

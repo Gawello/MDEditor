@@ -1,5 +1,7 @@
 #include "app/AppSettings.h"
 
+#include "document/Encodings.h"
+
 #include <QSettings>
 
 AppSettings &AppSettings::instance()
@@ -20,6 +22,12 @@ void AppSettings::setValue(const QString &key, const QVariant &value)
         return;
     settings.setValue(key, value);
     emit changed(key);
+}
+
+QString AppSettings::fallbackEncoding() const
+{
+    const QString encoding = value(fallbackEncodingKey).toString();
+    return Encodings::isSupported(encoding) ? encoding : Encodings::defaultFallback();
 }
 
 QString AppSettings::formatterCommand(const QString &language) const

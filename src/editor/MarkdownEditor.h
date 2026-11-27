@@ -1,7 +1,9 @@
 #pragma once
 
 #include "editor/EditorTheme.h"
+#include "editor/MathRenderer.h"
 #include "markdown/BlockParser.h"
+#include "markdown/LineStyle.h"
 #include "markdown/TableParser.h"
 
 #include <QDateTime>
@@ -12,10 +14,14 @@
 #include <QPlainTextEdit>
 #include <QTextBlock>
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
+class CodeHighlighter;
 class LivePreviewHighlighter;
+class QMenu;
 class QTimer;
 
 class BlockData;
@@ -25,6 +31,12 @@ class MarkdownEditor : public QPlainTextEdit {
 
 public:
     explicit MarkdownEditor(QWidget *parent = nullptr);
+
+    // Markdown files get the live preview; any other text file is edited as plain text.
+    static bool isMarkdownFile(const QString &path);
+    // Live preview on or off. Off, the text is shown as it is, in a monospace font, at full width.
+    void setMarkdownMode(bool on);
+    bool markdownMode() const { return m_markdown; }
 
     // The document text exactly as it should be written to disk.
     QString markdown() const;
@@ -45,6 +57,37 @@ public:
     // Inserts an empty table with `rows` rows (including the header) and `columns` columns.
     void insertTable(int rows, int columns);
 
+    // Gives the lines of the selection a paragraph style, or removes it if they all have it.
+    void setLineStyle(md::LineStyle style, int level = 0);
+    // Removes inline formatting from the selection (or the current line).
+    void clearFormatting();
+    // Turns the selection into a [[wiki link]] or a [text](url) link, or inserts an empty one.
+    void insertLink(bool wiki);
+
+    enum class Snippet { CodeBlock, MathBlock, Callout, HorizontalRule, Footnote };
+    void insertSnippet(Snippet snippet);
+
+    enum class TableAction {
+        RowAbove, RowBelow, DuplicateRow, DeleteRow, MoveRowUp, MoveRowDown,
+        ColumnLeft, ColumnRight, DeleteColumn, MoveColumnLeft, MoveColumnRight,
+        AlignLeft, AlignCenter, AlignRight, SortAscending, SortDescending, DeleteTable
+    };
+    // Edits the table under the cursor; false if the cursor isn't in a table or the edit isn't possible.
+    bool tableAction(TableAction action);
+    bool cursorInTable() const;
+
+    // The right-click menu for a click at `pos` (viewport coordinates).
+    std::unique_ptr<QMenu> createContextMenu(const QPoint &pos);
+
+    // Menu builders shared by the right-click menu and the main window's Format menu. `target` gives the
+    // editor to act on when an action runs. With `ownShortcuts` the actions get their shortcuts; otherwise
+    // the shortcut is only displayed (the main menu owns it).
+    using EditorGetter = std::function<MarkdownEditor *()>;
+    static void addFormatActions(QMenu *menu, const EditorGetter &target, bool ownShortcuts);
+    static void addParagraphActions(QMenu *menu, const EditorGetter &target);
+    static void addInsertActions(QMenu *menu, const EditorGetter &target);
+    static void addLinkActions(QMenu *menu, const EditorGetter &target, bool ownShortcuts);
+
     // Formats the selection, the code block or table under the cursor (or a non-Markdown file).
     void formatAtCursor();
     // Formats every code block with a known language and every table (or a whole non-Markdown file).
@@ -57,6 +100,10 @@ signals:
     void openFileRequested(const QString &path);
     void filesDropped(const QStringList &paths);
     void statusMessage(const QString &message);
+    void markdownModeChanged(bool on);
+    // The editor has no table picker or symbol picker of its own: the main window shows them.
+    void insertTableRequested(const QPoint &globalPos);
+    void insertSymbolRequested();
 
 protected:
     bool event(QEvent *event) override;
@@ -104,6 +151,7 @@ private:
     bool formatTable(const QTextBlock &header, QString *message);
     void restoreCursor(QTextCursor cursor, int anchor, int position);
     void applyTheme();
+    void updateCodeHighlighter();
     void applyFontSettings();
     void refreshActiveBlock();
     QString resolvePath(const QString &target) const;
@@ -119,10 +167,18 @@ private:
     bool moveToTableCell(bool backwards);
     bool tableEnter();
     void insertTableRowAfter(const QTextBlock &block);
+    int tableColumnAt(const QTextCursor &cursor) const;
+    void insertBlockText(const QString &text, int caret);
+    void addTableActions(QMenu *menu);
+    // The misspelled (underlined) word at document position `position`, as [start, end); empty if none.
+    std::pair<int, int> misspelledWordAt(int position) const;
+    void addSpellingActions(QMenu *menu, int position);
     void placeInTableCell(const QTextBlock &block, int cell, bool select);
     void updateMargins();
     md::BlockInfo blockInfo(const QTextBlock &block) const;
     void paintEntities(QPainter &painter, const QTextBlock &block, const BlockData &data) const;
+    void paintMath(QPainter &painter, const QTextBlock &block, const BlockData &data) const;
+    const MathRenderer::Formula &formula(const QString &tex, bool display) const;
     QRectF characterRect(const QTextBlock &block, int position) const;
     bool continueList();
     bool indentListItem(bool outdent);
@@ -132,9 +188,11 @@ private:
 
     EditorTheme m_theme;
     LivePreviewHighlighter *m_highlighter = nullptr;
+    CodeHighlighter *m_codeHighlighter = nullptr; // plain-text mode, files of a known language
     QString m_baseDirectory;
     QString m_documentPath; // empty for an unsaved document
     bool m_applyingTheme = false;
+    bool m_markdown = true;
     mutable QHash<QString, CachedImage> m_images; // by absolute path
     mutable bool m_hasImages = false;              // re-layout images when the width changes
     int m_layoutWidth = 0;
