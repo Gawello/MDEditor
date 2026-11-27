@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(MDEditor VERSION 0.1.0 DESCRIPTION "Live-preview Markdown editor" LANGUAGES CXX)
+project(MDEditor VERSION 0.2.0 DESCRIPTION "Live-preview Markdown editor" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
