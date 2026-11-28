@@ -94,10 +94,12 @@ void EditorTab::showReader(QTextDocument *document)
         });
         static_cast<QVBoxLayout *>(layout())->insertWidget(layout()->indexOf(m_editor), m_reader, 1);
     }
+    // The tab owns the documents, not the browser: the browser (made first) goes first when the tab is destroyed,
+    // while its text control still points at its document.
     QTextDocument *old = m_reader->document();
-    document->setParent(m_reader);
+    document->setParent(this);
     m_reader->setDocument(document);
-    if (old && old != document && old->parent() == m_reader)
+    if (old && old != document && old->parent() == this)
         old->deleteLater();
     // The text column of the editor: the same margins and font.
     document->setDocumentMargin(m_editor->document()->documentMargin());
