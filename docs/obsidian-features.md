@@ -91,10 +91,10 @@ any text file can be edited, not just Markdown.
 | Rename a heading and update the links to it | ❌ | Right-click "Rename this heading…" | P2 | M |
 | Link right-click: open in new tab / to the right / in new window; act on the target (rename, move, bookmark, reveal) | 🟡 | Open, to the right, copy address and path, reveal, rename; no move/bookmark | P3 | S |
 | New link format option (shortest / relative / absolute), wiki or Markdown links | ❌ | | P2 | S |
-| Backlinks (linked mentions), also under the note | ❌ | The index has everything it needs | P1 | M |
-| Unlinked mentions (with "Link" button) | ❌ | | P2 | M |
-| Outgoing links pane | ❌ | | P1 | S |
-| Page preview on hover (Ctrl+hover on a link) | ❌ | Reuse the embed renderer | P1 | M |
+| Backlinks (linked mentions), also under the note | 🟡 | Side panel and status bar count; not under the note | P3 | S |
+| Unlinked mentions (with "Link" button) | ✅ | Names and aliases, whole words, outside code and links | | |
+| Outgoing links pane | ✅ | Existing and not-yet-created notes | | |
+| Page preview on hover (Ctrl+hover on a link) | ✅ | In the editor; not yet in panels | | |
 | Graph view | ✅ | Force layout, drag, zoom, open by click | | |
 | Local graph with depth | 🟡 | Depth 1 only | P2 | S |
 | Graph filters (tags, attachments, orphans, existing files), groups with colors, forces settings, arrows | ❌ | | P2 | M |

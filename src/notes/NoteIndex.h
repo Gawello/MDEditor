@@ -6,6 +6,7 @@
 #include <QFutureWatcher>
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 
 #include <memory>
@@ -50,6 +51,18 @@ public:
     // The file a link points to, from the note `from`: [[Note]] by name anywhere in the folder (nearest first),
     // [[folder/Note]] and [text](relative/path.md) by path. Empty if it doesn't exist.
     QString resolve(const QString &target, bool wiki, const QString &from) const;
+    // The same, but only among the folder's files (no disk access): fast enough for every link of every note.
+    QString resolveIndexed(const QString &target, bool wiki, const QString &from) const;
+
+    // The links pointing to a note, from other notes, by source then line. Worked out on the first call after
+    // a change.
+    struct Backlink {
+        QString source;
+        int line = 0;
+        QString anchor;
+        bool embed = false;
+    };
+    QList<Backlink> backlinks(const QString &path) const;
     // How a [[link]] names `path`: the bare name when no other file has it ("Note", "pic.png"), else the path
     // from the open folder ("sub/Note"); Markdown notes without ".md".
     QString linkText(const QString &path) const;
@@ -84,7 +97,11 @@ private:
     QHash<QString, QStringList> m_byName; // lower-case base name (no .md) -> paths
     QHash<QString, QStringList> m_byAlias; // lower-case alias -> paths
     QList<FileEntry> m_entries;
+    QSet<QString> m_fileSet;
     void indexEntries();
+    QString resolveWith(const QString &target, bool wiki, const QString &from, bool indexedOnly) const;
+    mutable QHash<QString, QList<Backlink>> m_backlinks; // target -> links to it
+    mutable bool m_backlinksDirty = true;
     QFutureWatcher<Result> m_watcher;
     bool m_again = false;
 };

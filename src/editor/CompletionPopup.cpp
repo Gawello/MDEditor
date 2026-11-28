@@ -60,6 +60,7 @@ CompletionPopup::CompletionPopup(QWidget *editor)
     , m_list(new QListWidget(this))
 {
     setAttribute(Qt::WA_ShowWithoutActivating);
+    setAttribute(Qt::WA_StyledBackground); // a plain QWidget draws no style sheet border or background
     setFocusPolicy(Qt::NoFocus);
     m_list->setFocusPolicy(Qt::NoFocus);
     m_list->setItemDelegate(new Delegate(m_list));

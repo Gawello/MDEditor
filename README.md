@@ -39,6 +39,10 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   the current file), Ctrl+Alt+click or Ctrl+Alt+Enter in the other pane. `[[Note#Heading]]`, `[[Note#^block]]`,
   `[[#Heading]]` and `[x](Note.md#heading-slug)` scroll to the heading or block; `[[Note]]` also finds a note by
   its `aliases:`; following a link to a note that doesn't exist creates it next to the current note
+- Backlinks (View → Backlinks, or the "N backlinks" button in the status bar): the notes linking to this one with
+  their lines, and unlinked mentions of its name or aliases with a Link button that turns one into a `[[link]]`
+  (closed notes are changed on disk with their own encoding and line endings). View → Outgoing Links lists this
+  note's links, those to notes not created yet apart. Ctrl+hover over a link previews the note
 - Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,
   `[[Note#^` its block ids, `#ta` the tags in use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent

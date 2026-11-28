@@ -19,6 +19,9 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontInfo>
+#include <QCursor>
+#include <QTextBrowser>
+#include <QGuiApplication>
 #include <QImageReader>
 #include <QMenu>
 #include <QMessageBox>
@@ -245,6 +248,24 @@ void MarkdownEditor::replaceAll(const QString &text)
     setTextCursor(cursor);
 }
 
+void MarkdownEditor::applyText(const QString &text)
+{
+    const QString old = markdown();
+    if (text == old)
+        return;
+    const qsizetype shorter = std::min(old.size(), text.size());
+    qsizetype prefix = 0;
+    while (prefix < shorter && old[prefix] == text[prefix])
+        ++prefix;
+    qsizetype suffix = 0;
+    while (suffix < shorter - prefix && old[old.size() - 1 - suffix] == text[text.size() - 1 - suffix])
+        ++suffix;
+    QTextCursor cursor(document());
+    cursor.setPosition(int(prefix));
+    cursor.setPosition(int(old.size() - suffix), QTextCursor::KeepAnchor);
+    cursor.insertText(text.mid(prefix, text.size() - prefix - suffix));
+}
+
 void MarkdownEditor::refreshActiveBlock()
 {
     if (m_highlighter->setActiveBlock(textCursor().blockNumber()))
@@ -362,6 +383,13 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
             break;
         }
     }
+    if (key == Qt::Key_Escape && m_preview && m_preview->isVisible()) {
+        m_preview->hide();
+        return;
+    }
+    // Pressing Ctrl over a link shows its preview, as moving the mouse with Ctrl held does.
+    if (key == Qt::Key_Control && m_markdown && viewport()->underMouse())
+        startPreview(viewport()->mapFromGlobal(QCursor::pos()));
     // Typing (or deleting) may start, narrow or end a list of suggestions.
     const bool typed = !event->text().isEmpty() || key == Qt::Key_Backspace || key == Qt::Key_Delete;
     const auto suggest = qScopeGuard([this, typed] {
@@ -395,6 +423,8 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
 void MarkdownEditor::focusOutEvent(QFocusEvent *event)
 {
     hideCompletion();
+    if (m_preview)
+        m_preview->hide();
     QPlainTextEdit::focusOutEvent(event);
 }
 
@@ -543,6 +573,117 @@ void MarkdownEditor::mouseMoveEvent(QMouseEvent *event)
     const bool overLink = m_markdown && (event->modifiers() & Qt::ControlModifier)
         && linkTargetAt(event->position().toPoint()).has_value();
     viewport()->setCursor(overLink ? Qt::PointingHandCursor : Qt::IBeamCursor);
+    if (overLink)
+        startPreview(event->position().toPoint());
+    else if (m_previewTimer)
+        m_previewTimer->stop();
+}
+
+void MarkdownEditor::startPreview(const QPoint &viewportPos)
+{
+    const auto target = linkTargetAt(viewportPos);
+    if (!target)
+        return;
+    if (m_preview && m_preview->isVisible() && *target == m_previewTarget)
+        return; // already shown
+    m_previewTarget = *target;
+    m_previewPos = viewportPos;
+    if (!m_previewTimer) {
+        m_previewTimer = new QTimer(this);
+        m_previewTimer->setSingleShot(true);
+        m_previewTimer->setInterval(350);
+        connect(m_previewTimer, &QTimer::timeout, this, [this] {
+            if (!(QGuiApplication::queryKeyboardModifiers() & Qt::ControlModifier))
+                return;
+            const QTextCursor at = cursorForPosition(m_previewPos);
+            QRect line = cursorRect(at);
+            line.setLeft(0);
+            line.setRight(viewport()->width());
+            previewLink(m_previewTarget, viewport()->mapToGlobal(QPoint(m_previewPos.x(), line.bottom() + 6)),
+                        QRect(viewport()->mapToGlobal(line.topLeft()), line.size()));
+        });
+    }
+    m_previewTimer->start();
+}
+
+bool MarkdownEditor::previewLink(const QString &target, const QPoint &globalPos, const QRect &lineRect)
+{
+    const QString path = linkFile(target);
+    const QFileInfo info(path);
+    if (path.isEmpty() || !info.isFile() || info.size() > 2 * 1024 * 1024
+        || !(isMarkdownFile(path) || info.suffix().compare(u"txt", Qt::CaseInsensitive) == 0))
+        return false;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    QString text = QString::fromUtf8(file.readAll());
+    text.remove(u'\r');
+    const QString anchor = target.section(u'#', 1);
+    if (!m_preview)
+        m_preview = new NotePreview(this);
+    m_preview->browser()->document()->setDefaultFont(font()); // the note's own size, not the UI's
+    const QString title = anchor.isEmpty() ? info.completeBaseName() : info.completeBaseName() + QStringLiteral(" › ") + anchor;
+    m_preview->showNote(title, isMarkdownFile(path) ? excerpt(text, anchor) : QStringLiteral("```\n") + text + QStringLiteral("\n```"),
+                        info.absolutePath(), globalPos, lineRect);
+    return true;
+}
+
+QString MarkdownEditor::excerpt(const QString &text, const QString &anchor)
+{
+    const md::NoteScan scan = md::scanNote(toView(text));
+    QStringList lines = text.split(u'\n');
+    int first = scan.frontmatterEnd + 1;
+    int last = int(lines.size()) - 1;
+    const QString wanted = QUrl::fromPercentEncoding(anchor.toUtf8()).trimmed();
+    if (wanted.startsWith(u'^')) { // a block: that line
+        for (const md::BlockId &block : scan.blocks) {
+            if (QString::fromStdU16String(block.id) == wanted.mid(1)) {
+                first = last = block.line;
+                break;
+            }
+        }
+    } else if (!wanted.isEmpty()) { // a heading: its section
+        const QString heading = wanted.section(u'#', -1).trimmed();
+        for (size_t i = 0; i < scan.headings.size(); ++i) {
+            const md::Heading &h = scan.headings[i];
+            if (QString::fromStdU16String(h.text).compare(heading, Qt::CaseInsensitive) != 0)
+                continue;
+            first = h.line;
+            for (size_t j = i + 1; j < scan.headings.size(); ++j) {
+                if (scan.headings[j].level <= h.level) {
+                    last = scan.headings[j].line - 1;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+    QString content = lines.mid(first, last - first + 1).join(u'\n');
+    // [[target#heading|alias]] -> alias, or "target › heading"; ![[pic.png]] -> an image.
+    static const QRegularExpression wiki(QStringLiteral(R"((!?)\[\[([^\]|#]*)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\])"));
+    QString result;
+    qsizetype done = 0;
+    for (auto it = wiki.globalMatch(content); it.hasNext();) {
+        const QRegularExpressionMatch match = it.next();
+        result += QStringView(content).mid(done, match.capturedStart() - done);
+        const QString target = match.captured(2).trimmed();
+        const QString section = match.captured(3).trimmed();
+        if (!match.captured(1).isEmpty() && !isImageFile(target)) {
+            result += QFileInfo(target).completeBaseName(); // an embedded note: its name
+        } else if (!match.captured(1).isEmpty()) {
+            result += QStringLiteral("![](%1)").arg(QString::fromUtf8(QUrl::toPercentEncoding(target, "/")));
+        } else if (!match.captured(4).isEmpty()) {
+            result += match.captured(4);
+        } else {
+            QString name = QFileInfo(target).completeBaseName();
+            if (name.isEmpty())
+                name = target;
+            result += section.isEmpty() ? name : (name.isEmpty() ? section : name + QStringLiteral(" › ") + section);
+        }
+        done = match.capturedEnd();
+    }
+    result += QStringView(content).mid(done);
+    return result;
 }
 
 void MarkdownEditor::paintEvent(QPaintEvent *event)
@@ -2726,27 +2867,9 @@ const MarkdownEditor::Embed *MarkdownEditor::embed(const QString &target) const
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return nullptr;
-    const QString text = QString::fromUtf8(file.readAll());
-    const md::NoteScan scan = md::scanNote(toView(text));
-    QStringList lines = text.split(u'\n');
-    int first = scan.frontmatterEnd + 1;
-    int last = int(lines.size()) - 1;
-    if (!anchor.isEmpty()) { // ![[Note#Heading]]: that section only
-        for (size_t i = 0; i < scan.headings.size(); ++i) {
-            const md::Heading &heading = scan.headings[i];
-            if (QString::fromStdU16String(heading.text).compare(anchor.trimmed(), Qt::CaseInsensitive) != 0)
-                continue;
-            first = heading.line;
-            for (size_t j = i + 1; j < scan.headings.size(); ++j) {
-                if (scan.headings[j].level <= heading.level) {
-                    last = scan.headings[j].line - 1;
-                    break;
-                }
-            }
-            break;
-        }
-    }
-    const QString content = lines.mid(first, last - first + 1).join(u'\n');
+    QString text = QString::fromUtf8(file.readAll());
+    text.remove(u'\r');
+    const QString content = excerpt(text, anchor); // ![[Note#Heading]]: that section only
 
     Embed result;
     result.modified = info.lastModified();

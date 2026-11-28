@@ -110,7 +110,7 @@ bool EditorTab::reload(QString &error, const QString &encoding)
     return true;
 }
 
-EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool overwrite)
+EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool overwrite, bool hooks)
 {
     // Save As targets a different file, and the file dialog already asked about replacing it.
     if (!overwrite && !isUntitled() && QFileInfo(path).absoluteFilePath() == filePath()) {
@@ -126,10 +126,11 @@ EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool 
         }
     }
 
-    if (AppSettings::instance().formatOnSave())
+    if (hooks && AppSettings::instance().formatOnSave())
         m_editor->formatDocument(true);
     // Plugins may adjust the text before it's written (e.g. update a "modified" date).
-    m_editor->replaceAll(PluginManager::instance().notifyBeforeSave(path, m_editor->markdown()));
+    if (hooks)
+        m_editor->replaceAll(PluginManager::instance().notifyBeforeSave(path, m_editor->markdown()));
 
     bool encodable = true;
     const QByteArray data = m_document.encode(m_editor->markdown(), &encodable);
@@ -157,7 +158,8 @@ EditorTab::SaveResult EditorTab::save(const QString &path, QString &error, bool 
     m_changeBar->hide();
     emit stateChanged();
     shareFileState();
-    PluginManager::instance().notifySave(m_document.filePath());
+    if (hooks)
+        PluginManager::instance().notifySave(m_document.filePath());
     return SaveResult::Saved;
 }
 

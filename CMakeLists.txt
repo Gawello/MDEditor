@@ -50,6 +50,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/MainWindow.cpp src/app/MainWindow.h
         src/app/NavigationHistory.cpp src/app/NavigationHistory.h
         src/notes/Completions.cpp src/notes/Completions.h
+        src/notes/NoteEdits.cpp src/notes/NoteEdits.h
         src/app/PaletteDialog.cpp src/app/PaletteDialog.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/SymbolPicker.cpp src/app/SymbolPicker.h
@@ -62,6 +63,7 @@ if(MDEDITOR_BUILD_APP)
         src/document/Document.cpp src/document/Document.h
         src/document/Encodings.cpp src/document/Encodings.h
         src/editor/CompletionPopup.cpp src/editor/CompletionPopup.h
+        src/editor/NotePreview.cpp src/editor/NotePreview.h
         src/editor/CodeHighlighter.cpp src/editor/CodeHighlighter.h
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
@@ -72,6 +74,7 @@ if(MDEDITOR_BUILD_APP)
         src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
         src/panels/GraphView.cpp src/panels/GraphView.h
+        src/panels/LinksPanel.cpp src/panels/LinksPanel.h
         src/panels/OutlinePanel.cpp src/panels/OutlinePanel.h
         src/panels/SearchPanel.cpp src/panels/SearchPanel.h
         src/panels/SideBar.cpp src/panels/SideBar.h

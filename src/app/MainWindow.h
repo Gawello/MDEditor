@@ -6,6 +6,7 @@
 #include <QPointer>
 
 #include <functional>
+#include <optional>
 
 class EditorTab;
 class FolderPanel;
@@ -24,6 +25,8 @@ class QLabel;
 class SearchPanel;
 class SideBar;
 class TagPanel;
+class BacklinksPanel;
+class OutgoingLinksPanel;
 class GraphView;
 
 class MainWindow : public QMainWindow {
@@ -75,6 +78,10 @@ private:
     void followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight);
     void openToTheRight(EditorTab *from, const QString &path);
     static void scrollToLine(MarkdownEditor *editor, int line); // the line at the top, cursor on it
+    // The app changes notes the user isn't editing (a linked mention, links after a rename). An open note is
+    // changed in its tab, and saved if it had no unsaved changes; a closed one on disk, as it is encoded.
+    // Returns the paths that couldn't be changed, with why.
+    QStringList changeNotes(const QList<std::pair<QString, std::function<std::optional<QString>(const QString &)>>> &changes);
     void revealInFolderPanel(const QString &path);
     // File management, from the folder panel and the tab menu. Open tabs follow their files.
     void renamePath(const QString &path, const QString &newName);
@@ -119,6 +126,7 @@ private:
     // A new note `name`.md in the folder (or next to the current file), opened in a tab.
     void createNamedNote(const QString &name);
     void updateWordCount();
+    void updateBacklinkCount();
     void openDailyNote();
     void showGraph();
     void insertTemplate(MarkdownEditor *editor);
@@ -156,6 +164,9 @@ private:
     OutlinePanel *m_outline = nullptr;
     SearchPanel *m_search = nullptr;
     TagPanel *m_tagPanel = nullptr;
+    BacklinksPanel *m_backlinks = nullptr;
+    OutgoingLinksPanel *m_outgoing = nullptr;
+    QToolButton *m_backlinkCount = nullptr; // status bar: "3 backlinks", opens the panel
     QLabel *m_wordCount = nullptr;
     QWidget *m_graphWindow = nullptr;
     GraphView *m_graph = nullptr;

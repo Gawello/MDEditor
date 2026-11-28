@@ -70,7 +70,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 | `[[Note\|` | Display text suggestion | ❌ |
 | `#` | Existing tags | ✅ |
 | `/` (Slash commands) | Every command, filtered as you type, with shortcuts | ❌ |
-| Ctrl+hover on a link | Page preview: the note rendered in a popover, scrollable, editable | ❌ |
+| Ctrl+hover on a link | Page preview: the note rendered in a popover, scrollable, editable | 🟡 read-only |
 
 ## 3. File explorer (left sidebar)
 
@@ -109,7 +109,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Tab bar | New tab (+) | ✅ |
 | Tab bar ▾ menu | Stack tabs, Bookmark N tabs…, Close all, list of open tabs | 🟡 Close All only |
 | Note header | ← → (history), file path breadcrumbs, Bookmark star, mode button (editing ↔ reading; Ctrl+click opens to the right), ⋮ More options (= tab menu without Close/Pin) | ❌ |
-| Status bar | Backlink count, property count, editing mode (click to switch), words + characters, sync status | 🟡 word count, encoding, line ending |
+| Status bar | Backlink count, property count, editing mode (click to switch), words + characters, sync status | 🟡 backlinks, words, encoding, line ending |
 
 ## 5. Sidebar panels
 
@@ -117,8 +117,8 @@ The menu is built from groups; which groups appear depends on what's under the m
 |---|---|---|
 | Search | Match case, regex via `/…/`, settings: Collapse results, Show more context, Explain search terms, sort (as the explorer); operator hints when empty: `path:` `file:` `tag:` `line:` `section:` `[property]` (also `content:`, `block:`, `task:`, `task-todo:`, `task-done:`, `match-case:`, `ignore-case:`, `OR`, `-`, `"…"`); right-click a result: file menu | 🟡 text, match case, regex, tag results |
 | Bookmarks | Bookmark the active tab, New group, Collapse all, filter; bookmarks for files, folders, searches, headings, blocks, graphs; groups | 🟡 files and folders |
-| Backlinks | Linked mentions, Unlinked mentions (each with a Link button), Collapse results, Show more context, sort, filter | ❌ |
-| Outgoing links | Links (resolved and unresolved, with headings), Unlinked mentions | ❌ |
+| Backlinks | Linked mentions, Unlinked mentions (each with a Link button), Collapse results, Show more context, sort, filter | 🟡 no collapse/context/sort/filter |
+| Outgoing links | Links (resolved and unresolved, with headings), Unlinked mentions | 🟡 no unlinked mentions |
 | Outline | Filter, Auto-scroll to current section, Collapse all; drag headings to move sections | 🟡 no filter, no drag |
 | Tags | Sort (name A–Z/Z–A, frequency high/low), Show nested tags, Expand all, filter | 🟡 list with counts |
 | All properties | Every property with its count, sort, filter | ❌ |
@@ -211,8 +211,8 @@ out.
 
 | Plugin | Commands | MDEditor |
 |---|---|---|
-| Backlinks | Show backlinks, Open backlinks for the current note, Toggle backlinks in document | ❌ |
-| Outgoing links | Show outgoing links, Open for the current file | ❌ |
+| Backlinks | Show backlinks, Open backlinks for the current note, Toggle backlinks in document | 🟡 show |
+| Outgoing links | Show outgoing links, Open for the current file | ✅ |
 | Outline | Show outline, Open outline of the current file | ✅ |
 | Tags view, Properties view, Footnotes view | Show tags / all properties / file properties / footnotes | 🟡 tags |
 | Graph view | Open graph view [Ctrl+G], Open local graph, Start timelapse animation | 🟡 no timelapse |

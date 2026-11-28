@@ -14,7 +14,11 @@ int main(int argc, char *argv[])
     QSettings().clear();
     ThemeManager::instance().initialize();
 
+    // An argument runs only the tests whose name contains it: app_tests backlinks
+    const std::string filter = argc > 1 ? argv[1] : "";
     for (const auto &c : test::registry()) {
+        if (!filter.empty() && std::string(c.name).find(filter) == std::string::npos)
+            continue;
         const int before = test::failures();
         c.fn();
         std::cout << (test::failures() == before ? "[ OK ] " : "[FAIL] ") << c.name << "\n";

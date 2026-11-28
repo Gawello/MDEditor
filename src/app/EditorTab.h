@@ -38,7 +38,8 @@ public:
     // `binary` is set when the file isn't text (and so wasn't loaded).
     bool load(const QString &path, QString &error, bool *binary = nullptr);
     // `overwrite` skips the check for changes made elsewhere.
-    SaveResult save(const QString &path, QString &error, bool overwrite = false);
+    // `hooks`: format on save and the plugins' beforeSave; off for changes the app makes to other notes.
+    SaveResult save(const QString &path, QString &error, bool overwrite = false, bool hooks = true);
     // With `encoding`, the file is read in that encoding whatever its bytes look like.
     bool reload(QString &error, const QString &encoding = {});
 

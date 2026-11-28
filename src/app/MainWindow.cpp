@@ -1,6 +1,7 @@
 #include "app/MainWindow.h"
 
 #include "app/AppSettings.h"
+#include "app/Background.h"
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
 #include "app/FileActions.h"
@@ -17,10 +18,12 @@
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/Completions.h"
+#include "notes/NoteEdits.h"
 #include "notes/NoteIndex.h"
 #include "notes/Templates.h"
 #include "panels/FolderPanel.h"
 #include "panels/GraphView.h"
+#include "panels/LinksPanel.h"
 #include "panels/OutlinePanel.h"
 #include "panels/SearchPanel.h"
 #include "panels/SideBar.h"
@@ -136,12 +139,44 @@ MainWindow::MainWindow(QWidget *parent)
     m_outline = new OutlinePanel(m_sideBar);
     m_search = new SearchPanel(m_index, m_sideBar);
     m_tagPanel = new TagPanel(m_index, m_sideBar);
+    m_backlinks = new BacklinksPanel(m_index, m_sideBar);
+    m_outgoing = new OutgoingLinksPanel(m_index, m_sideBar);
     m_outline->setObjectName(QStringLiteral("outline"));
     m_search->setObjectName(QStringLiteral("search"));
     m_tagPanel->setObjectName(QStringLiteral("tags"));
+    m_backlinks->setObjectName(QStringLiteral("backlinks"));
+    m_outgoing->setObjectName(QStringLiteral("outgoing"));
     m_sideBar->addPage(tr("Outline"), m_outline);
+    m_sideBar->addPage(tr("Backlinks"), m_backlinks);
+    m_sideBar->addPage(tr("Outgoing"), m_outgoing);
     m_sideBar->addPage(tr("Search"), m_search);
     m_sideBar->addPage(tr("Tags"), m_tagPanel);
+    connect(m_backlinks, &BacklinksPanel::openRequested, this, &MainWindow::openAt);
+    connect(m_backlinks, &BacklinksPanel::linkMentionRequested, this,
+            [this](const BacklinksPanel::Mention &mention, const QString &target) {
+                const QString link = m_index->linkText(target);
+                const QString mentioned = mention.text.mid(mention.column, mention.length);
+                // As written when that finds the note too (names match in any case), else with display text.
+                const QString replacement = mentioned.compare(link, Qt::CaseInsensitive) == 0
+                                                ? QStringLiteral("[[%1]]").arg(mentioned)
+                                                : QStringLiteral("[[%1|%2]]").arg(link, mentioned);
+                bool applied = false;
+                const QStringList failures = changeNotes(
+                    {{mention.source, [mention, mentioned, replacement, &applied](const QString &text) -> std::optional<QString> {
+                          QStringList lines = text.split(u'\n');
+                          if (mention.line >= lines.size() || lines[mention.line].mid(mention.column, mention.length) != mentioned)
+                              return std::nullopt; // the note changed since: leave it
+                          lines[mention.line].replace(mention.column, mention.length, replacement);
+                          applied = true;
+                          return lines.join(u'\n');
+                      }}});
+                if (!failures.isEmpty())
+                    QMessageBox::warning(this, tr("Link Mention"), failures.join(u'\n'));
+                else if (!applied)
+                    statusBar()->showMessage(tr("That line has changed: nothing linked"), 5000);
+                m_backlinks->refresh();
+            });
+    connect(m_index, &NoteIndex::changed, this, &MainWindow::updateBacklinkCount);
     m_sideBar->hide();
     connect(m_search, &SearchPanel::openRequested, this, &MainWindow::openAt);
     connect(m_tagPanel, &TagPanel::tagActivated, this, [this](const QString &tag) {
@@ -212,6 +247,12 @@ MainWindow::MainWindow(QWidget *parent)
     auto *encodingMenu = new QMenu(m_encodingButton);
     connect(encodingMenu, &QMenu::aboutToShow, this, [this, encodingMenu] { populateEncodingMenu(encodingMenu); });
     m_encodingButton->setMenu(encodingMenu);
+    m_backlinkCount = new QToolButton(this);
+    m_backlinkCount->setAutoRaise(true);
+    m_backlinkCount->setToolTip(tr("Show the backlinks of this note"));
+    m_backlinkCount->hide();
+    connect(m_backlinkCount, &QToolButton::clicked, this, [this] { toggleSidePage(m_backlinks); });
+    statusBar()->addPermanentWidget(m_backlinkCount);
     m_wordCount = new QLabel(this);
     m_wordCount->setForegroundRole(QPalette::PlaceholderText);
     statusBar()->addPermanentWidget(m_wordCount);
@@ -338,6 +379,8 @@ void MainWindow::createMenus()
     view->addAction(tr("O&utline"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), this,
                     [this] { toggleSidePage(m_outline); });
     view->addAction(tr("Ta&gs"), this, [this] { toggleSidePage(m_tagPanel); });
+    view->addAction(tr("Bac&klinks"), this, [this] { toggleSidePage(m_backlinks); });
+    view->addAction(tr("Outgoing Link&s"), this, [this] { toggleSidePage(m_outgoing); });
     view->addAction(tr("Graph &View"), QKeySequence(Qt::CTRL | Qt::Key_G), this, &MainWindow::showGraph);
     view->addAction(tr("&Command Palette…"), QKeySequence(Qt::CTRL | Qt::Key_P), this, [this] {
         QMetaObject::invokeMethod(this, &MainWindow::showCommandPalette, Qt::QueuedConnection);
@@ -625,6 +668,11 @@ void MainWindow::updateMarkdownActions()
     // Called whenever the current tab or its mode changes: what follows the current editor follows here.
     if (m_outline)
         m_outline->setEditor(currentTab() ? currentEditor() : nullptr);
+    if (m_backlinks)
+        m_backlinks->setNote(currentTab() ? currentTab()->filePath() : QString());
+    if (m_outgoing)
+        m_outgoing->setEditor(currentTab() ? currentEditor() : nullptr);
+    updateBacklinkCount();
     if (m_graph && currentTab())
         m_graph->setCurrent(currentTab()->filePath());
     updateWordCount();
@@ -1125,6 +1173,8 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
         if (tab == currentTab()) {
             updateWindowTitle();
             updateEncodingButton();
+            m_backlinks->setNote(tab->filePath()); // loaded into the empty tab, renamed, saved as
+            updateBacklinkCount();
         }
     });
     connect(tab->editor(), &MarkdownEditor::linkRequested, this,
@@ -1605,6 +1655,61 @@ void MainWindow::openToTheRight(EditorTab *from, const QString &path)
     openFile(path);
 }
 
+QStringList MainWindow::changeNotes(
+    const QList<std::pair<QString, std::function<std::optional<QString>(const QString &)>>> &changes)
+{
+    QStringList failures;
+    QList<std::pair<QString, NoteEdits::Change>> onDisk;
+    for (const auto &[path, change] : changes) {
+        EditorTab *tab = nullptr;
+        for (EditorTab *candidate : allTabs()) {
+            if (RecentFiles::samePath(candidate->filePath(), path)) {
+                tab = candidate; // a twin gets the edit mirrored
+                break;
+            }
+        }
+        if (!tab) {
+            onDisk.append({path, change});
+            continue;
+        }
+        const QString old = tab->editor()->markdown();
+        const std::optional<QString> text = change(old);
+        if (!text || *text == old)
+            continue;
+        const bool hadChanges = tab->isModified();
+        tab->editor()->applyText(*text);
+        m_index->update(path, *text);
+        if (hadChanges)
+            continue; // saved with the user's own changes
+        QString error;
+        if (tab->save(path, error, false, false) != EditorTab::SaveResult::Saved)
+            failures << tr("%1: %2").arg(QDir::toNativeSeparators(path), error.isEmpty() ? tr("not saved") : error);
+    }
+    if (onDisk.isEmpty())
+        return failures;
+
+    const QString fallback = AppSettings::instance().fallbackEncoding();
+    const auto outcomes = runAndWait(
+        [onDisk, fallback] {
+            QList<NoteEdits::Outcome> result;
+            for (const auto &[path, change] : onDisk)
+                result << NoteEdits::applyToFile(path, change, fallback);
+            return result;
+        },
+        tr("Updating notes…"), this);
+    if (!outcomes) {
+        failures << tr("Stopped waiting for the drive: some notes may not be updated.");
+        return failures;
+    }
+    for (const NoteEdits::Outcome &outcome : *outcomes) {
+        if (!outcome.error.isEmpty())
+            failures << tr("%1: %2").arg(QDir::toNativeSeparators(outcome.path), outcome.error);
+        else if (outcome.changed)
+            m_index->update(outcome.path, outcome.text);
+    }
+    return failures;
+}
+
 void MainWindow::scrollToLine(MarkdownEditor *editor, int line)
 {
     const QTextBlock block = editor->document()->findBlockByNumber(line);
@@ -1727,6 +1832,23 @@ void MainWindow::insertTemplate(MarkdownEditor *editor)
     }
     dialog.setItems(items);
     dialog.choose();
+}
+
+void MainWindow::updateBacklinkCount()
+{
+    if (!m_backlinkCount)
+        return;
+    EditorTab *tab = m_tabs ? currentTab() : nullptr;
+    if (!tab || tab->isUntitled() || !MarkdownEditor::isMarkdownFile(tab->filePath()) || m_index->root().isEmpty()) {
+        m_backlinkCount->hide();
+        return;
+    }
+    QSet<QString> sources;
+    for (const NoteIndex::Backlink &link : m_index->backlinks(tab->filePath()))
+        sources.insert(link.source);
+    const qsizetype count = sources.size();
+    m_backlinkCount->setText(count == 1 ? tr("1 backlink") : tr("%1 backlinks").arg(count));
+    m_backlinkCount->show();
 }
 
 void MainWindow::updateWordCount()

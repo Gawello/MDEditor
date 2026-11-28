@@ -63,6 +63,8 @@ cmake --build --preset core; ctest --preset core          # parser only, no Qt n
 
 - Parser/formatter logic: add cases to `tests/test_*.cpp`. The tests use the tiny harness in
   `tests/TestHarness.h` (`TEST_CASE`, `CHECK`), not Qt Test, so they build without Qt.
+- `app_tests <part of a name>` runs only the matching tests. Tests that open a `MainWindow` remove the `session`
+  and `window` settings first: an earlier test's sidebar state would otherwise carry over.
 - App-level tests (`tests/test_plugins.cpp`, `app_tests`) use the same harness with a QApplication and their
   own QSettings organization (`MDEditorTests`), so they never touch the user's settings.
 - Visual checks: render widgets off screen (`Qt::WA_DontShowOnScreen` + `grab()`) in a scratch driver. Do **not**
@@ -131,7 +133,9 @@ src/markdown/NoteScan   Qt-free: a note's headings, tags (inline + frontmatter),
 src/notes/NoteIndex     every file under the open folder + NoteScan of each note, built off the GUI thread, refreshed
                         on activation (re-reads changed files only); resolve() for [[links]]; tagCounts()
 src/notes/Templates     moment.js-style dates, {{title}}/{{date}}/{{time}} expansion, daily note paths
-src/panels/             SideBar (right: OutlinePanel, SearchPanel, TagPanel), GraphView (force layout, own window)
+src/panels/             SideBar (right: OutlinePanel, BacklinksPanel, OutgoingLinksPanel (LinksPanel), SearchPanel,
+                        TagPanel), GraphView (force layout, own window)
+src/notes/NoteEdits     changing closed notes byte-faithfully (background); Completions: [[/# suggestions
 src/app/PaletteDialog   quick switcher / command palette / template picker: fuzzy list, frameless modal dialog
 src/spell/SpellChecker  Hunspell dictionaries (several languages at once), background loading, user words
 third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the local patch) + tinyxml2, Hunspell
@@ -184,6 +188,15 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   20k notes in a debug build); `CompletionPopup` is a `Qt::ToolTip` window that never takes the focus, the editor
   forwards ↑↓/Enter/Tab/Esc to it (`keyPressEvent`) and re-evaluates after each typed key and cursor move.
   `MarkdownEditor::setCompletionProvider` is static, like the link resolver.
+- Backlinks: `NoteIndex::backlinks` (built lazily after each change with `resolveIndexed`, which checks the index's
+  file set instead of the disk); `BacklinksPanel::collect` (background) reads the linking lines and finds unlinked
+  mentions. The app changes other notes only through `MainWindow::changeNotes`: an open tab gets a minimal edit
+  (`MarkdownEditor::applyText`, one undo step) and is saved without hooks if it had no unsaved changes; a closed
+  file goes through `NoteEdits::applyToFile` (Document read/encode/write, no format-on-save or plugins).
+- Page preview: Ctrl+hover (350 ms) → `MarkdownEditor::previewLink` → `NotePreview` (a `Qt::ToolTip` QTextBrowser
+  that closes when the mouse leaves it and the link's line). `MarkdownEditor::excerpt` (front matter off, a section
+  or block, `[[links]]` as text) feeds both previews and embeds. Tool-tip windows need `WA_StyledBackground` for
+  their style-sheet border.
 - `NoteIndex` follows `FolderPanel::rootChanged`; `MainWindow::saveTo` passes the saved text to `update()`.
   `MarkdownEditor::setLinkResolver` (static) makes [[links]], Ctrl+click and embeds resolve through the index.
 - Inline: `#tag` (`md::Tag`, after whitespace, not only digits, locked so `_` isn't emphasis) and `[^label]`

@@ -2,6 +2,7 @@
 
 #include "editor/CompletionPopup.h"
 #include "editor/EditorTheme.h"
+#include "editor/NotePreview.h"
 #include "editor/MathRenderer.h"
 #include "markdown/BlockParser.h"
 #include "markdown/Completion.h"
@@ -52,6 +53,9 @@ public:
 
     // Replaces the whole text as one undo step, keeping the cursor position where possible.
     void replaceAll(const QString &text);
+    // Changes the text to `text` by replacing only the part that differs, as one undo step: the cursor, the
+    // scroll position and the folds elsewhere stay as they are.
+    void applyText(const QString &text);
 
     // Wraps the selection in `marker` (e.g. "**"), or unwraps it if already wrapped.
     void toggleWrap(const QString &marker);
@@ -114,6 +118,15 @@ public:
     using CompletionProvider =
         std::function<QList<CompletionItem>(const md::CompletionContext &context, const QString &from, const QString &text)>;
     static void setCompletionProvider(CompletionProvider provider);
+    // What an embed or a preview shows of a note: without the front matter, only the section (`Heading`) or
+    // block (`^id`) when `anchor` names one, and [[links]] as their text, which QTextDocument can't show.
+    static QString excerpt(const QString &text, const QString &anchor);
+    // Ctrl+hover: shows the note `target` links to under `globalPos`, next to the line `lineRect` (global).
+    // False when it isn't a note that can be shown.
+    bool previewLink(const QString &target, const QPoint &globalPos, const QRect &lineRect);
+    NotePreview *notePreview() const { return m_preview; } // null until first shown
+    // Follows a link as written ("Note#Heading", "path/x.md", a URL), as Ctrl+click does.
+    void openLink(const QString &target, bool toTheRight = false);
     CompletionPopup *completionPopup() const { return m_completion; } // null until first needed
 
 signals:
@@ -211,7 +224,6 @@ private:
     bool indentListItem(bool outdent);
     std::optional<QString> linkTargetAt(const QPoint &pos) const;
     std::optional<QString> linkTargetAt(const QTextCursor &cursor) const;
-    void openLink(const QString &target, bool toTheRight = false);
     // The file an internal link points to (absolute, existing or not), or empty for URLs and nothing usable.
     QString linkFile(const QString &target) const;
     bool toggleTaskAt(const QPoint &pos);
@@ -245,6 +257,12 @@ private:
     void acceptCompletion(int row);
     void hideCompletion();
     CompletionPopup *m_completion = nullptr;
+    // Page preview: shown after the mouse rests on a link with Ctrl held.
+    void startPreview(const QPoint &viewportPos);
+    NotePreview *m_preview = nullptr;
+    QTimer *m_previewTimer = nullptr;
+    QString m_previewTarget;
+    QPoint m_previewPos; // viewport
     md::CompletionContext m_completionContext;
     int m_completionStart = -1;
     int m_completionDismissed = -1; // Escape: no list again for the query starting here

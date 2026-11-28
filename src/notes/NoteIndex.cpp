@@ -31,6 +31,9 @@ void NoteIndex::setRoot(const QString &root)
     m_byName.clear();
     m_byAlias.clear();
     m_entries.clear();
+    m_fileSet.clear();
+    m_backlinks.clear();
+    m_backlinksDirty = true;
     emit changed();
     refresh();
 }
@@ -105,6 +108,7 @@ void NoteIndex::finished()
         }
         indexAliases();
         indexEntries();
+        m_backlinksDirty = true;
         emit changed();
     }
     if (m_again) {
@@ -130,6 +134,7 @@ void NoteIndex::update(const QString &path, const QString &text)
         indexEntries();
     }
     indexAliases();
+    m_backlinksDirty = true;
     emit changed();
 }
 
@@ -145,11 +150,30 @@ QStringList NoteIndex::noteNames() const
 
 QString NoteIndex::resolve(const QString &target, bool wiki, const QString &from) const
 {
+    return resolveWith(target, wiki, from, false);
+}
+
+QString NoteIndex::resolveIndexed(const QString &target, bool wiki, const QString &from) const
+{
+    return resolveWith(target, wiki, from, true);
+}
+
+QString NoteIndex::resolveWith(const QString &target, bool wiki, const QString &from, bool indexedOnly) const
+{
     QString path = QUrl::fromPercentEncoding(target.trimmed().toUtf8());
     if (path.isEmpty())
         return {};
     const QDir here(QFileInfo(from).absolutePath());
-    const auto existing = [](const QString &candidate) -> QString {
+    // On disk, or (indexedOnly: no disk access, for scanning every link) among the folder's files.
+    const auto existing = [this, indexedOnly](const QString &candidate) -> QString {
+        if (indexedOnly) {
+            const QString clean = QDir::cleanPath(candidate);
+            if (m_fileSet.contains(clean))
+                return clean;
+            if (QFileInfo(clean).suffix().isEmpty() && m_fileSet.contains(clean + QStringLiteral(".md")))
+                return clean + QStringLiteral(".md");
+            return {};
+        }
         const QFileInfo info(candidate);
         if (info.isFile())
             return QDir::cleanPath(info.absoluteFilePath());
@@ -230,8 +254,30 @@ QStringList NoteIndex::aliases(const QString &path) const
     return note ? aliasesIn(note->scan) : QStringList();
 }
 
+QList<NoteIndex::Backlink> NoteIndex::backlinks(const QString &path) const
+{
+    if (m_backlinksDirty) {
+        m_backlinks.clear();
+        for (const auto &note : std::as_const(m_notes)) {
+            for (const md::NoteLink &link : note->scan.links) {
+                const QString target = resolveIndexed(QString::fromStdU16String(link.target), link.wiki, note->path);
+                if (!target.isEmpty() && target != note->path)
+                    m_backlinks[target].append({note->path, link.line, QString::fromStdU16String(link.anchor), link.embed});
+            }
+        }
+        for (QList<Backlink> &list : m_backlinks) {
+            std::sort(list.begin(), list.end(), [](const Backlink &a, const Backlink &b) {
+                return a.source != b.source ? a.source.compare(b.source, Qt::CaseInsensitive) < 0 : a.line < b.line;
+            });
+        }
+        m_backlinksDirty = false;
+    }
+    return m_backlinks.value(QDir::cleanPath(path));
+}
+
 void NoteIndex::indexEntries()
 {
+    m_fileSet = QSet<QString>(m_files.cbegin(), m_files.cend());
     m_entries.clear();
     m_entries.reserve(m_files.size());
     const QString prefix = m_root + u'/';
