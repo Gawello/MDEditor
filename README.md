@@ -53,7 +53,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Slash commands: `/` at the start of a line or after a space lists every menu command, filtered as you type;
   Enter runs it (Settings → Editor)
 - Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,
-  `[[Note#^` its block ids, `#ta` the tags in use; ↑↓ to choose, Enter or Tab to insert, Esc to close
+  `[[Note#^` its block ids, `#ta` the tags in use, and in the front matter the property names and values the
+  folder's notes use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
 - Line commands (Edit menu): Move Line Up / Down (Alt+↑ / Alt+↓, folded sections move as a whole), Delete Line
   (Ctrl+D), Toggle Checkbox (Ctrl+L: a line becomes a task, a task is checked or unchecked), Cycle List Item

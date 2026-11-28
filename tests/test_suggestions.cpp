@@ -233,3 +233,59 @@ TEST_CASE(typing_with_pairs_and_suggestions)
     CHECK(editor.markdown() == "See [[Bet]]");
     MarkdownEditor::setCompletionProvider({});
 }
+
+TEST_CASE(suggestions_in_front_matter)
+{
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), false);
+    const auto restore = qScopeGuard(
+        [] { AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), true); });
+    Folder folder;
+    writeNote(folder.path("Beta2.md"), "---\nstatus: draft\ntags: [proj/x, idea]\n---\n");
+    writeNote(folder.path("Gamma.md"), "---\nstatus: done\n---\n");
+    writeNote(folder.path("Delta.md"), "---\nstatus: draft\n---\n");
+    folder.index.refresh();
+    QElapsedTimer timer;
+    timer.start();
+    while ((folder.index.scanning() || folder.index.notes().size() < 7) && timer.elapsed() < 5000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    NoteIndex *index = &folder.index;
+    MarkdownEditor::setCompletionProvider([index](const md::CompletionContext &c, const QString &from, const QString &text) {
+        return Completions::suggest(*index, c, from, text);
+    });
+    MarkdownEditor editor;
+    editor.setDocumentPath(folder.path("Home.md"));
+    editor.setMarkdown(QStringLiteral("---\n\n---\ntext"));
+    QTextCursor cursor(editor.document()->findBlockByNumber(1));
+    editor.setTextCursor(cursor);
+
+    type(editor, "st");
+    CHECK(popupShown(editor) && editor.completionPopup()->items().value(0).label == "status");
+    key(editor, Qt::Key_Return);
+    CHECK(editor.document()->findBlockByNumber(1).text() == "status: ");
+    type(editor, "dr");
+    CHECK(popupShown(editor) && editor.completionPopup()->items().value(0).label == "draft");
+    CHECK(editor.completionPopup()->items().value(0).detail == "2"); // used by two notes
+    key(editor, Qt::Key_Return);
+    CHECK(editor.document()->findBlockByNumber(1).text() == "status: draft");
+
+    // A list under "tags:": its items; tags in use count too.
+    editor.moveCursor(QTextCursor::EndOfBlock);
+    key(editor, Qt::Key_Return);
+    type(editor, "tags:");
+    key(editor, Qt::Key_Escape);
+    key(editor, Qt::Key_Return);
+    CHECK(editor.document()->findBlockByNumber(2).text() == "tags:"); // Enter made a line, no suggestion taken
+    type(editor, "  - pr");
+    CHECK(popupShown(editor));
+    QStringList offered;
+    for (const CompletionItem &item : editor.completionPopup()->items())
+        offered << item.label;
+    CHECK(offered.contains("proj/x") && offered.contains("proj")); // values written, and tags in use
+    key(editor, Qt::Key_Escape);
+    // [[ in a value: notes.
+    key(editor, Qt::Key_Return);
+    type(editor, "up: [[Bet");
+    CHECK(popupShown(editor) && editor.completionPopup()->items().value(0).label.startsWith("Beta"));
+    key(editor, Qt::Key_Escape);
+    MarkdownEditor::setCompletionProvider({});
+}

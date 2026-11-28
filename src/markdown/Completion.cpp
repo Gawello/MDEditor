@@ -99,4 +99,72 @@ CompletionContext completionAt(std::u16string_view line, int cursor)
     return context;
 }
 
+static CompletionContext propertyContext(std::u16string_view line, int cursor, std::u16string_view listKey);
+
+CompletionContext propertyCompletionAt(std::u16string_view line, int cursor, std::u16string_view listKey)
+{
+    CompletionContext context = propertyContext(line, cursor, listKey);
+    // Only once something is typed: an empty line or "key:" followed by Enter must stay a line break.
+    if (context.query.empty())
+        return {};
+    return context;
+}
+
+static CompletionContext propertyContext(std::u16string_view line, int cursor, std::u16string_view listKey)
+{
+    CompletionContext context;
+    if (cursor < 0 || cursor > int(line.size()))
+        return context;
+    const std::u16string_view before = line.substr(0, size_t(cursor));
+    const auto trimmedStart = [](std::u16string_view text) {
+        size_t i = 0;
+        while (i < text.size() && isSpace(text[i]))
+            ++i;
+        return i;
+    };
+    // "  - item" in a list under a key
+    const size_t indent = trimmedStart(before);
+    if (indent < before.size() && before[indent] == u'-' && indent + 1 < before.size() && isSpace(before[indent + 1])) {
+        if (listKey.empty())
+            return context;
+        const size_t start = indent + 1 + trimmedStart(before.substr(indent + 1));
+        context.kind = CompletionKind::PropertyValue;
+        context.note = std::u16string(listKey);
+        context.start = int(start);
+        context.query = std::u16string(before.substr(start));
+        return context;
+    }
+    const size_t colon = before.find(u':');
+    if (colon == std::u16string_view::npos) { // the key, from the start of the line
+        if (indent != 0 || before.find(u' ') != std::u16string_view::npos)
+            return context;
+        context.kind = CompletionKind::PropertyKey;
+        context.start = 0;
+        context.query = std::u16string(before);
+        context.closed = line.substr(size_t(cursor)).find(u':') != std::u16string_view::npos;
+        return context;
+    }
+    // "key: value", "key: [a, b"
+    std::u16string_view key = before.substr(0, colon);
+    while (!key.empty() && isSpace(key.back()))
+        key.remove_suffix(1);
+    if (key.empty() || isSpace(line[0]))
+        return context;
+    size_t start = colon + 1;
+    start += trimmedStart(before.substr(start));
+    // An inline list, "[a, b": the item being typed (not a "[[link]]" value).
+    if (start < before.size() && before[start] == u'[' && before.substr(start, 2) != u"[[") {
+        const size_t item = before.find_last_of(u"[,");
+        start = item + 1;
+        start += trimmedStart(before.substr(start));
+    }
+    if (start < before.size() && (before[start] == u'"' || before[start] == u'\''))
+        ++start;
+    context.kind = CompletionKind::PropertyValue;
+    context.note = std::u16string(key);
+    context.start = int(start);
+    context.query = std::u16string(before.substr(start));
+    return context;
+}
+
 } // namespace md

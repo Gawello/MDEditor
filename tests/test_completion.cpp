@@ -82,3 +82,35 @@ TEST_CASE(completion_finds_slash_commands)
     CHECK(at(u"[[a/b|").kind == CompletionKind::Note);
     CHECK(at(u"https://x|").kind == CompletionKind::None);
 }
+
+namespace {
+
+CompletionContext inFrontmatter(std::u16string text, std::u16string_view listKey = {})
+{
+    const size_t cursor = text.rfind(u'|');
+    text.erase(cursor, 1);
+    return propertyCompletionAt(text, int(cursor), listKey);
+}
+
+} // namespace
+
+TEST_CASE(completion_in_front_matter)
+{
+    CompletionContext c = inFrontmatter(u"sta|");
+    CHECK(c.kind == CompletionKind::PropertyKey && c.query == u"sta" && c.start == 0 && !c.closed);
+    CHECK(inFrontmatter(u"sta|: x").closed);
+    c = inFrontmatter(u"status: dr|");
+    CHECK(c.kind == CompletionKind::PropertyValue && c.note == u"status" && c.query == u"dr" && c.start == 8);
+    c = inFrontmatter(u"tags: [one, tw|");
+    CHECK(c.kind == CompletionKind::PropertyValue && c.note == u"tags" && c.query == u"tw" && c.start == 12);
+    c = inFrontmatter(u"up: \"[[No|");
+    CHECK(c.kind == CompletionKind::PropertyValue && c.query == u"[[No");
+    c = inFrontmatter(u"  - pro|", u"tags");
+    CHECK(c.kind == CompletionKind::PropertyValue && c.note == u"tags" && c.query == u"pro" && c.start == 4);
+    CHECK(inFrontmatter(u"  - x|").kind == CompletionKind::None);    // no key above
+    CHECK(inFrontmatter(u"two words|").kind == CompletionKind::None);
+    CHECK(inFrontmatter(u"  indented|").kind == CompletionKind::None);
+    CHECK(inFrontmatter(u"|").kind == CompletionKind::None);        // nothing typed yet
+    CHECK(inFrontmatter(u"tags: |").kind == CompletionKind::None);
+    CHECK(inFrontmatter(u"  - |", u"tags").kind == CompletionKind::None);
+}

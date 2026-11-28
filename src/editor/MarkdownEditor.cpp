@@ -777,11 +777,30 @@ void MarkdownEditor::updateCompletion(bool mayOpen)
     const QTextBlock block = cursor.block();
     const BlockType type = blockType(block);
     if (!m_markdown || !provider || isReadOnly() || cursor.hasSelection() || isCode(type)
-        || md::isFrontmatterType(type) || md::isMathType(type)) {
+        || (md::isFrontmatterType(type) && type != BlockType::FrontmatterLine) || md::isMathType(type)) {
         hideCompletion();
         return;
     }
-    const md::CompletionContext context = md::completionAt(toView(block.text()), cursor.positionInBlock());
+    md::CompletionContext context;
+    if (type == BlockType::FrontmatterLine) {
+        // Property names and values; a "- item" line belongs to the "key:" above it.
+        QString listKey;
+        for (QTextBlock above = block.previous(); above.isValid() && blockType(above) == BlockType::FrontmatterLine;
+             above = above.previous()) {
+            const QString line = above.text();
+            if (line.trimmed().startsWith(u'-'))
+                continue;
+            if (line.trimmed().endsWith(u':') && !line.front().isSpace())
+                listKey = line.trimmed().chopped(1).trimmed();
+            break;
+        }
+        context = md::completionAt(toView(block.text()), cursor.positionInBlock());
+        if (context.kind != md::CompletionKind::Note && context.kind != md::CompletionKind::Heading
+            && context.kind != md::CompletionKind::Block) // "up: [[No": notes, as in the text
+            context = md::propertyCompletionAt(toView(block.text()), cursor.positionInBlock(), toView(listKey));
+    } else {
+        context = md::completionAt(toView(block.text()), cursor.positionInBlock());
+    }
     const int start = block.position() + context.start;
     if (context.kind == md::CompletionKind::None || start == m_completionDismissed) {
         hideCompletion();

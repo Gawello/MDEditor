@@ -1,5 +1,7 @@
 #include "notes/Completions.h"
 
+#include "markdown/NoteScan.h"
+
 #include "app/PaletteDialog.h"
 #include "editor/LivePreviewHighlighter.h" // toView
 #include "editor/MarkdownEditor.h"
@@ -133,6 +135,41 @@ QList<Suggestion> suggest(const NoteIndex &index, const md::CompletionContext &c
             const QString id = QString::fromStdU16String(block.id);
             const QString label = QString::fromStdU16String(block.text);
             add(match(query, id, label), {label.isEmpty() ? id : label, u'^' + id, id});
+        }
+        break;
+    }
+    case md::CompletionKind::PropertyKey:
+    case md::CompletionKind::PropertyValue: {
+        // What the folder's notes use, the most used first.
+        const QString key = QString::fromStdU16String(context.note);
+        QHash<QString, int> counts;
+        for (const auto &note : index.notes()) {
+            for (const md::Property &property : note->scan.properties) {
+                const QString name = QString::fromStdU16String(property.key);
+                if (context.kind == md::CompletionKind::PropertyKey) {
+                    ++counts[name];
+                } else if (name == key) {
+                    for (const std::u16string &value : md::propertyList(property.value)) // "[a, b]", "a, b"
+                        ++counts[QString::fromStdU16String(value).trimmed()];
+                }
+            }
+        }
+        if (context.kind == md::CompletionKind::PropertyValue && (key == u"tags" || key == u"tag")) {
+            const QHash<QString, int> tags = index.tagCounts();
+            for (auto it = tags.cbegin(); it != tags.cend(); ++it)
+                counts[it.key()] = std::max(counts.value(it.key()), it.value());
+        }
+        QStringList names = counts.keys();
+        std::sort(names.begin(), names.end(), [&counts](const QString &a, const QString &b) {
+            return counts.value(a) != counts.value(b) ? counts.value(a) > counts.value(b)
+                                                      : a.compare(b, Qt::CaseInsensitive) < 0;
+        });
+        for (const QString &name : std::as_const(names)) {
+            if (name.isEmpty() || name == query)
+                continue;
+            const QString insert = context.kind == md::CompletionKind::PropertyKey && !context.closed ? name + QStringLiteral(": ")
+                                                                                                        : name;
+            add(match(query, name), {name, QString::number(counts.value(name)), insert});
         }
         break;
     }

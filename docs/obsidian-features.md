@@ -109,7 +109,7 @@ any text file can be edited, not just Markdown.
 |---|---|---|---|---|
 | YAML frontmatter shown as properties | ✅ | Read-only rendering; raw YAML on the cursor | | |
 | Property editor with types (text, list, number, checkbox, date, date & time) | ❌ | Add/remove/edit fields with widgets; right-click to change the type, sort, clear; Add property (Ctrl+;) | P2 | L |
-| Property name and value autocomplete | ❌ | | P2 | S |
+| Property name and value autocomplete | ✅ | In the YAML front matter; `[[` in values suggests notes | | |
 | Properties view (all properties in the folder, counts) | ❌ | | P2 | S |
 | `tags`, `aliases`, `cssclasses` special properties | 🟡 | `tags` counted; `aliases` not used | P2 | S |
 | Show properties: visible / hidden / source | ❌ | | P3 | S |
