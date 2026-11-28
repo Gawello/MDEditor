@@ -109,7 +109,12 @@ public:
     static void setLinkResolver(LinkResolver resolver);
 
 signals:
-    void openFileRequested(const QString &path);
+    // A link to a note or text file was followed: `path` (absolute; it may not exist yet, then the note is to be
+    // created), the part after '#' (a heading or ^block), and whether it goes to the other pane. An empty
+    // `path` means this note itself ([[#Heading]]).
+    void linkRequested(const QString &path, const QString &anchor, bool toTheRight);
+    void revealRequested(const QString &path); // the link menu's Reveal in Folder Panel
+    void renameRequested(const QString &path); // ...and Rename
     void filesDropped(const QStringList &paths);
     void statusMessage(const QString &message);
     void markdownModeChanged(bool on);
@@ -196,7 +201,10 @@ private:
     bool continueList();
     bool indentListItem(bool outdent);
     std::optional<QString> linkTargetAt(const QPoint &pos) const;
-    void openLink(const QString &target);
+    std::optional<QString> linkTargetAt(const QTextCursor &cursor) const;
+    void openLink(const QString &target, bool toTheRight = false);
+    // The file an internal link points to (absolute, existing or not), or empty for URLs and nothing usable.
+    QString linkFile(const QString &target) const;
     bool toggleTaskAt(const QPoint &pos);
     void applyFolds();
     QRectF foldMarkerRect(const QTextBlock &block) const;

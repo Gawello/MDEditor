@@ -174,6 +174,10 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   window's shortcuts stay dead while typing still reaches the editor.
 - Ctrl+O is the quick switcher (Obsidian's), the file dialog is Ctrl+Alt+O; Ctrl+P the command palette, which lists
   the menu bar's actions (emitting each menu's `aboutToShow` first, so self-filling menus are included).
+- Links: `MarkdownEditor::openLink` resolves (`linkFile`) and emits `linkRequested(path, anchor, toTheRight)`;
+  `MainWindow::followLink` creates a missing note, opens it (or `openToTheRight`), and scrolls to
+  `NoteIndex::findAnchor` (headings by text or slug, `^block` ids) with `scrollToLine`. Aliases live in
+  `NoteIndex::m_byAlias` and are tried after file names.
 - `NoteIndex` follows `FolderPanel::rootChanged`; `MainWindow::saveTo` passes the saved text to `update()`.
   `MarkdownEditor::setLinkResolver` (static) makes [[links]], Ctrl+click and embeds resolve through the index.
 - Inline: `#tag` (`md::Tag`, after whitespace, not only digits, locked so `_` isn't emphasis) and `[^label]`
@@ -295,7 +299,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   tab-switching shortcut works.
 - Set an editor's base directory *before* `setMarkdown()`, or relative image paths fail to resolve during
   the first highlight pass.
-- Use `document()->toRawText()` (not `toPlainText()`, which turns NBSP into spaces) when saving.
+- Use `document()->toRawText()` (not `toPlainText()`, which turns NBSP into spaces) when saving. But `toRawText()`
+  separates blocks with U+2029, not '\n': anything that splits the text into lines (`md::scanNote`,
+  `NoteIndex::findAnchor`) needs `toPlainText()`.
 - Wheel events over the viewport margins (centered text column) don't reach the viewport; `MarkdownEditor::event`
   forwards them.
 - On X11 `QPlainTextEdit` takes Ctrl+K (delete to end of line) through `ShortcutOverride`; `MarkdownEditor::event`

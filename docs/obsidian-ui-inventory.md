@@ -43,11 +43,11 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Cursor in a section | Rename this heading… (updates links to it) | ❌ |
 | Cursor in a section | Bookmark this heading… | ❌ |
 | Cursor in a section | Extract this heading… (moves the section to a new note) | ❌ |
-| Internal link `[[…]]` | Open in new tab / Open to the right / Open in new window | 🟡 Open Link only |
+| Internal link `[[…]]` | Open in new tab / Open to the right / Open in new window | 🟡 no new window |
 | Internal link | Edit link (dialog for target and display text) | ❌ |
-| Internal link | Copy path ▸ as Obsidian URL / from vault folder / from system root | 🟡 Copy Link Address |
-| Internal link | Rename…, Move file to…, Bookmark… (act on the linked file) | ❌ |
-| Internal link | Start presentation, Open in default app, Show in system explorer, Reveal file in navigation | ❌ |
+| Internal link | Copy path ▸ as Obsidian URL / from vault folder / from system root | 🟡 Copy Link Address, Copy File Path |
+| Internal link | Rename…, Move file to…, Bookmark… (act on the linked file) | 🟡 Rename |
+| Internal link | Start presentation, Open in default app, Show in system explorer, Reveal file in navigation | 🟡 Reveal |
 | External link | Open link in default browser / Open link in web viewer, Edit link, Copy URL | 🟡 Open Link, Copy Link Address |
 | Tag `#tag` | Edit tag | ❌ |
 | Footnote reference | Delete footnote and reference | ❌ |
@@ -174,7 +174,7 @@ out.
 | Add cursor above / below | ❌ |
 | Insert callout, code block, footnote, horizontal rule, Markdown link [Ctrl+K], math block, table, internal link, embed, tag, attachment | 🟡 no "insert tag/embed/attachment" |
 | Fold more / Fold less / Toggle fold on the current line / Fold all headings and lists / Unfold all / Toggle fold properties | 🟡 toggle, fold all, unfold all |
-| Follow link under cursor [Alt+Enter], open it in a new tab [Ctrl+Enter], to the right [Ctrl+Alt+Enter], in a new window | 🟡 Ctrl+click only |
+| Follow link under cursor [Alt+Enter], open it in a new tab [Ctrl+Enter], to the right [Ctrl+Alt+Enter], in a new window | ✅ (no new window) |
 | Rename this heading… | ❌ |
 | Show context menu under cursor | ❌ (the Menu key works) |
 | Search current file [Ctrl+F], Search & replace [Ctrl+H] | ✅ |

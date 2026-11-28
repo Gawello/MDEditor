@@ -69,6 +69,12 @@ private:
     void discardTab(EditorTab *tab); // no questions: its file is gone
     void showTabMenu(QTabWidget *pane, const QPoint &pos);
     void renameTab(EditorTab *tab);
+    void renameFile(const QString &path); // in the folder panel when it's listed there, else with a dialog
+    // A link followed in `from`'s editor: opens (or creates) `path`, in the other pane if `toTheRight`, and
+    // scrolls to `anchor`. An empty path is `from` itself.
+    void followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight);
+    void openToTheRight(EditorTab *from, const QString &path);
+    static void scrollToLine(MarkdownEditor *editor, int line); // the line at the top, cursor on it
     void revealInFolderPanel(const QString &path);
     // File management, from the folder panel and the tab menu. Open tabs follow their files.
     void renamePath(const QString &path, const QString &newName);

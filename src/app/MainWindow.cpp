@@ -47,6 +47,7 @@
 #include <QPointer>
 #include <QScopeGuard>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSplitter>
 #include <QStandardPaths>
@@ -1121,7 +1122,12 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
             updateEncodingButton();
         }
     });
-    connect(tab->editor(), &MarkdownEditor::openFileRequested, this, &MainWindow::openFile);
+    connect(tab->editor(), &MarkdownEditor::linkRequested, this,
+            [this, tab](const QString &path, const QString &anchor, bool toTheRight) {
+                followLink(tab, path, anchor, toTheRight);
+            });
+    connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
+    connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
     connect(tab->editor(), &QPlainTextEdit::selectionChanged, this, [this, tab] {
         if (tab == currentTab())
             updateWordCount();
@@ -1419,6 +1425,14 @@ void MainWindow::showQuickSwitcher()
         add(path, tr("recent"));
     for (const QString &path : m_index->files())
         add(path, {});
+    // Aliases find their note too, shown as "alias → Note".
+    for (const auto &note : m_index->notes()) {
+        const QString path = note->path;
+        for (const QString &alias : NoteIndex::aliasesIn(note->scan)) {
+            items.append({alias, QStringLiteral("→ ") + QFileInfo(path).completeBaseName(), {},
+                          [this, path] { openFile(path); }});
+        }
+    }
     dialog.setItems(items);
     dialog.setFallback([this](const QString &query) -> std::optional<PaletteDialog::Item> {
         if (query.contains(u'\\') || query.startsWith(u'.'))
@@ -1515,6 +1529,86 @@ void MainWindow::createNamedNote(const QString &name)
     }
     if (openFile(path))
         m_index->update(path, QString());
+}
+
+void MainWindow::followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight)
+{
+    QPointer<EditorTab> source = from;
+    const QString file = path.isEmpty() && from ? from->filePath() : path;
+    rememberPosition();
+    ++m_quietHistory;
+    auto record = qScopeGuard([this] {
+        --m_quietHistory;
+        noteShown(true);
+    });
+
+    if (!file.isEmpty() && !QFileInfo::exists(file)) {
+        // A link to a note that isn't there yet: Obsidian creates it on the click.
+        QDir().mkpath(QFileInfo(file).absolutePath());
+        const FileActions::Result created = FileActions::createFile(file, this);
+        if (!created.ok) {
+            QMessageBox::warning(this, tr("Create Note"),
+                                 tr("Cannot create %1:\n%2").arg(QDir::toNativeSeparators(file), created.error));
+            return;
+        }
+        m_index->update(file, QString());
+        statusBar()->showMessage(tr("Created %1").arg(QFileInfo(file).fileName()), 5000);
+    }
+
+    if (toTheRight && source && !file.isEmpty())
+        openToTheRight(source, file);
+    else if (!path.isEmpty() && !openFile(file))
+        return;
+    else if (path.isEmpty() && source)
+        activate(source);
+
+    if (anchor.isEmpty())
+        return;
+    MarkdownEditor *editor = currentEditor();
+    const int line = NoteIndex::findAnchor(editor->document()->toPlainText(), anchor); // '\n' between lines
+    if (line < 0) {
+        statusBar()->showMessage(tr("No heading or block “%1” in this note").arg(QUrl::fromPercentEncoding(anchor.toUtf8())),
+                                 5000);
+        return;
+    }
+    scrollToLine(editor, line);
+}
+
+void MainWindow::openToTheRight(EditorTab *from, const QString &path)
+{
+    QTabWidget *sourcePane = paneOf(from);
+    // Already open over there: show it. Open on this side only: a twin goes over.
+    for (EditorTab *tab : allTabs()) {
+        if (RecentFiles::samePath(tab->filePath(), path) && paneOf(tab) != sourcePane) {
+            activate(tab);
+            return;
+        }
+    }
+    if (EditorTab *here = findTab(path)) {
+        splitTab(here, Qt::Horizontal);
+        return;
+    }
+    if (m_panes.size() == 1) {
+        // A new pane gets a copy of the source to start with; the link's file replaces it.
+        splitTab(from, Qt::Horizontal);
+        QPointer<EditorTab> placeholder = currentTab();
+        if (openFile(path) && placeholder && placeholder != currentTab())
+            closeTab(placeholder);
+        return;
+    }
+    setCurrentPane(m_panes[0] == sourcePane ? m_panes[1] : m_panes[0]);
+    openFile(path);
+}
+
+void MainWindow::scrollToLine(MarkdownEditor *editor, int line)
+{
+    const QTextBlock block = editor->document()->findBlockByNumber(line);
+    if (!block.isValid())
+        return;
+    editor->setTextCursor(QTextCursor(block));
+    // In a QPlainTextEdit the scroll bar counts layout lines: this puts the line at the top.
+    editor->verticalScrollBar()->setValue(block.firstLineNumber());
+    editor->setFocus();
 }
 
 QString MainWindow::notesRoot() const
@@ -1771,7 +1865,11 @@ void MainWindow::revealInFolderPanel(const QString &path)
 
 void MainWindow::renameTab(EditorTab *tab)
 {
-    const QString path = tab->filePath();
+    renameFile(tab->filePath());
+}
+
+void MainWindow::renameFile(const QString &path)
+{
     // In place in the folder panel, as Obsidian does, when the file is listed there.
     if (m_folderPanel->isVisible() && m_folderPanel->startRename(path))
         return;

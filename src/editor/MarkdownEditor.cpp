@@ -316,6 +316,16 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
         if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier
             && (tableEnter() || continueList()))
             return;
+        // Obsidian's "Follow link under cursor" (Alt+Enter; Ctrl+Enter too, as a new tab is where links open
+        // anyway) and "Open link to the right" (Ctrl+Alt+Enter).
+        if ((key == Qt::Key_Return || key == Qt::Key_Enter)
+            && (modifiers == Qt::AltModifier || modifiers == Qt::ControlModifier
+                || modifiers == (Qt::ControlModifier | Qt::AltModifier))) {
+            if (const auto target = linkTargetAt(textCursor())) {
+                openLink(*target, modifiers == (Qt::ControlModifier | Qt::AltModifier));
+                return;
+            }
+        }
         if (key == Qt::Key_Tab && modifiers == Qt::NoModifier && (moveToTableCell(false) || indentListItem(false)))
             return;
         if (key == Qt::Key_Backtab && (moveToTableCell(true) || indentListItem(true)))
@@ -340,7 +350,7 @@ void MarkdownEditor::mousePressEvent(QMouseEvent *event)
                 return;
             }
             if (const auto target = linkTargetAt(pos)) {
-                openLink(*target);
+                openLink(*target, event->modifiers().testFlag(Qt::AltModifier)); // Ctrl+Alt+click: to the right
                 return;
             }
         } else if (toggleTaskAt(pos) || focusTableCellAt(pos)) {
@@ -940,7 +950,11 @@ bool MarkdownEditor::indentListItem(bool outdent)
 
 std::optional<QString> MarkdownEditor::linkTargetAt(const QPoint &pos) const
 {
-    const QTextCursor hit = cursorForPosition(pos);
+    return linkTargetAt(cursorForPosition(pos));
+}
+
+std::optional<QString> MarkdownEditor::linkTargetAt(const QTextCursor &hit) const
+{
     const QTextBlock block = hit.block();
     const md::BlockInfo info = blockInfo(block);
     if (isCode(info.type) || info.type == BlockType::Blank || info.type == BlockType::HorizontalRule)
@@ -960,31 +974,56 @@ std::optional<QString> MarkdownEditor::linkTargetAt(const QPoint &pos) const
     return content.mid(link->urlStart, link->urlEnd - link->urlStart);
 }
 
-void MarkdownEditor::openLink(const QString &target)
+QString MarkdownEditor::linkFile(const QString &target) const
 {
     const QUrl url(target);
-    if (url.isValid() && url.scheme().size() > 1) { // one-letter schemes are Windows drive letters
-        QDesktopServices::openUrl(url);
-        return;
-    }
-
-    QString path = resolveLink(target, true);
+    if (url.isValid() && url.scheme().size() > 1) // one-letter schemes are Windows drive letters
+        return {};
+    const QString base = target.section(u'#', 0, 0);
+    if (base.trimmed().isEmpty())
+        return {};
+    QString path = resolveLink(base, true);
     if (path.isEmpty())
-        path = resolvePath(target);
+        path = resolvePath(base);
     if (path.isEmpty())
-        return;
-
+        return {};
     QFileInfo file(path);
     if (!file.exists() && file.suffix().isEmpty())
         file.setFile(file.filePath() + QStringLiteral(".md"));
+    return QDir::cleanPath(file.absoluteFilePath());
+}
 
-    // Notes and other text files open in a tab; images, PDFs and the like in their own application.
+void MarkdownEditor::openLink(const QString &target, bool toTheRight)
+{
+    const QUrl url(target);
+    if (url.isValid() && url.scheme().size() > 1) {
+        QDesktopServices::openUrl(url);
+        return;
+    }
+    const QString anchor = target.section(u'#', 1);
+    if (target.section(u'#', 0, 0).trimmed().isEmpty()) {
+        if (!anchor.isEmpty())
+            emit linkRequested(QString(), anchor, toTheRight); // [[#Heading]]: this note
+        return;
+    }
+    const QString path = linkFile(target);
+    if (path.isEmpty())
+        return;
+
+    // Notes and other text files open in a tab (a missing note is created, as in Obsidian); images, PDFs
+    // and the like in their own application.
+    const QFileInfo file(path);
     const QString suffix = file.suffix().toLower();
-    if (isMarkdownFile(file.filePath()) || suffix == u"txt"
-        || (!isImageFile(file.filePath()) && !FormatterRegistry::instance().languageForSuffix(suffix).isEmpty()))
-        emit openFileRequested(file.absoluteFilePath());
+    const bool text = isMarkdownFile(path) || suffix == u"txt"
+                      || (!isImageFile(path) && !FormatterRegistry::instance().languageForSuffix(suffix).isEmpty());
+    if (!file.exists() && !isMarkdownFile(path)) {
+        emit statusMessage(tr("%1 doesn't exist").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    if (text)
+        emit linkRequested(path, anchor, toTheRight);
     else
-        QDesktopServices::openUrl(QUrl::fromLocalFile(file.absoluteFilePath()));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 // Clicking a rendered checkbox (outside of the line being edited) toggles it.
@@ -2212,8 +2251,22 @@ std::unique_ptr<QMenu> MarkdownEditor::createContextMenu(const QPoint &pos)
     if (m_markdown) {
         if (const auto target = linkTargetAt(pos)) {
             const QString link = *target;
-            menu->addAction(tr("&Open Link"), this, [this, link] { openLink(link); });
+            const QString file = linkFile(link);
+            menu->addAction(withShortcut(tr("&Open Link"), QKeySequence(Qt::ALT | Qt::Key_Return)), this,
+                            [this, link] { openLink(link); });
+            if (!file.isEmpty() || link.startsWith(u'#'))
+                menu->addAction(withShortcut(tr("Open to the Ri&ght"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Return)),
+                                this, [this, link] { openLink(link, true); });
             menu->addAction(tr("Cop&y Link Address"), this, [link] { QGuiApplication::clipboard()->setText(link); });
+            if (QFileInfo(file).isFile()) { // what the linked file can do, as in the folder panel
+                menu->addAction(tr("Copy File Pat&h"), this,
+                                [file] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file)); });
+                menu->addAction(tr("Re&veal in Folder Panel"), this, [this, file] { emit revealRequested(file); });
+                menu->addAction(tr("Rena&me Linked File…"), this, [this, file] {
+                    // Queued: the rename dialog shouldn't run inside the menu's event loop.
+                    QMetaObject::invokeMethod(this, [this, file] { emit renameRequested(file); }, Qt::QueuedConnection);
+                });
+            }
             menu->addSeparator();
         }
         if (cursorInTable()) {

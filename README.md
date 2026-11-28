@@ -35,7 +35,10 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   back unchanged; the status bar shows encoding and line endings and can reopen or save in another
 - Spell checking (Hunspell) in several languages at once, Polish and English dictionaries included:
   suggestions, Add to Dictionary and Ignore in the right-click menu; languages in Settings → Editor
-- Links: `[text](url)`, bare URLs and `[[wiki links]]`. Ctrl+click opens them (relative links resolve next to the current file)
+- Links: `[text](url)`, bare URLs and `[[wiki links]]`. Ctrl+click or Alt+Enter opens them (relative links resolve next to
+  the current file), Ctrl+Alt+click or Ctrl+Alt+Enter in the other pane. `[[Note#Heading]]`, `[[Note#^block]]`,
+  `[[#Heading]]` and `[x](Note.md#heading-slug)` scroll to the heading or block; `[[Note]]` also finds a note by
+  its `aliases:`; following a link to a note that doesn't exist creates it next to the current note
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`

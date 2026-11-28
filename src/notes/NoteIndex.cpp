@@ -29,6 +29,7 @@ void NoteIndex::setRoot(const QString &root)
     m_files.clear();
     m_notes.clear();
     m_byName.clear();
+    m_byAlias.clear();
     emit changed();
     refresh();
 }
@@ -101,6 +102,7 @@ void NoteIndex::finished()
             const QString name = MarkdownEditor::isMarkdownFile(path) ? info.completeBaseName() : info.fileName();
             m_byName[name.toLower()] << path;
         }
+        indexAliases();
         emit changed();
     }
     if (m_again) {
@@ -124,6 +126,7 @@ void NoteIndex::update(const QString &path, const QString &text)
         m_files.sort(Qt::CaseInsensitive);
         m_byName[QFileInfo(clean).completeBaseName().toLower()] << clean;
     }
+    indexAliases();
     emit changed();
 }
 
@@ -168,6 +171,8 @@ QString NoteIndex::resolve(const QString &target, bool wiki, const QString &from
     if (name.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
         name.chop(3);
     QStringList candidates = m_byName.value(name.toLower());
+    if (candidates.isEmpty() && !path.contains(u'/'))
+        candidates = m_byAlias.value(name.toLower()); // [[Start]] for a note with "aliases: [Start]"
     if (candidates.isEmpty()) {
         if (QString found = existing(here.filePath(path)); !found.isEmpty())
             return found; // outside the folder, or no folder open
@@ -182,6 +187,92 @@ QString NoteIndex::resolve(const QString &target, bool wiki, const QString &from
     };
     return *std::min_element(candidates.cbegin(), candidates.cend(),
                              [&](const QString &a, const QString &b) { return distance(a) < distance(b); });
+}
+
+QStringList NoteIndex::aliasesIn(const md::NoteScan &scan)
+{
+    QStringList result;
+    for (const md::Property &property : scan.properties) {
+        const QString key = QString::fromStdU16String(property.key);
+        if (key.compare(QStringLiteral("aliases"), Qt::CaseInsensitive) != 0
+            && key.compare(QStringLiteral("alias"), Qt::CaseInsensitive) != 0)
+            continue;
+        for (const std::u16string &alias : md::propertyList(property.value)) {
+            QString text = QString::fromStdU16String(alias).trimmed();
+            if (text.size() >= 2 && (text.front() == u'"' || text.front() == u'\'') && text.back() == text.front())
+                text = text.mid(1, text.size() - 2);
+            if (!text.isEmpty())
+                result << text;
+        }
+    }
+    return result;
+}
+
+QStringList NoteIndex::aliases(const QString &path) const
+{
+    const auto note = m_notes.value(QDir::cleanPath(path));
+    return note ? aliasesIn(note->scan) : QStringList();
+}
+
+void NoteIndex::indexAliases()
+{
+    m_byAlias.clear();
+    for (const auto &note : std::as_const(m_notes)) {
+        for (const QString &alias : aliasesIn(note->scan))
+            m_byAlias[alias.toLower()] << note->path;
+    }
+}
+
+namespace {
+
+// GitHub's heading anchors: lower case, punctuation dropped, spaces to '-'.
+QString slug(const QString &text)
+{
+    QString result;
+    for (const QChar c : text.trimmed().toLower()) {
+        if (c.isLetterOrNumber() || c == u'-' || c == u'_')
+            result += c;
+        else if (c.isSpace())
+            result += u'-';
+    }
+    return result;
+}
+
+} // namespace
+
+int NoteIndex::findAnchor(const QString &text, const QString &anchor)
+{
+    QString wanted = QUrl::fromPercentEncoding(anchor.toUtf8()).trimmed();
+    if (wanted.isEmpty())
+        return -1;
+    if (wanted.startsWith(u'^')) { // a block: the line ending in " ^id", or a line of its own after a list or table
+        const QString id = wanted;
+        const QStringList lines = text.split(u'\n');
+        for (int i = 0; i < lines.size(); ++i) {
+            const QString line = lines[i].trimmed();
+            if (line == id) { // "^id" alone names the block above it (blank lines between are allowed)
+                int above = i - 1;
+                while (above > 0 && lines[above].trimmed().isEmpty())
+                    --above;
+                return std::max(above, 0);
+            }
+            if (line.endsWith(id) && line.size() > id.size() && line.at(line.size() - id.size() - 1).isSpace())
+                return i;
+        }
+        return -1;
+    }
+    wanted = wanted.section(u'#', -1).trimmed(); // [[Note#Parent#Child]]: the child under the parent
+    const md::NoteScan scan = md::scanNote(toView(text));
+    for (const md::Heading &heading : scan.headings) {
+        if (QString::fromStdU16String(heading.text).trimmed().compare(wanted, Qt::CaseInsensitive) == 0)
+            return heading.line;
+    }
+    const QString wantedSlug = slug(wanted);
+    for (const md::Heading &heading : scan.headings) {
+        if (slug(QString::fromStdU16String(heading.text)) == wantedSlug)
+            return heading.line;
+    }
+    return -1;
 }
 
 QHash<QString, int> NoteIndex::tagCounts() const

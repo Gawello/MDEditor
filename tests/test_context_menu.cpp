@@ -328,6 +328,19 @@ TEST_CASE(context_menu_mnemonics_are_unique)
     putCursor(editor, 0, 2);
     std::unique_ptr<QMenu> onLink = editor.createContextMenu(editor.cursorRect().center());
     checkMnemonics(onLink.get());
+
+    // A link to an existing note adds the file's entries.
+    QTemporaryDir dir;
+    QFile note(dir.filePath(QStringLiteral("Other.md")));
+    CHECK(note.open(QIODevice::WriteOnly));
+    note.close();
+    MarkdownEditor withNote;
+    withNote.setDocumentPath(dir.filePath(QStringLiteral("Here.md")));
+    withNote.setMarkdown(QStringLiteral("[[Other]] and text"));
+    putCursor(withNote, 0, 3);
+    std::unique_ptr<QMenu> onNote = withNote.createContextMenu(withNote.cursorRect().center());
+    CHECK(onNote->actions().size() > onLink->actions().size());
+    checkMnemonics(onNote.get());
 }
 
 // F2 is the window's Rename; the editor must not keep it.

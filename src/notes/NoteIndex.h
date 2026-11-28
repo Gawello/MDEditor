@@ -42,6 +42,12 @@ public:
     // The file a link points to, from the note `from`: [[Note]] by name anywhere in the folder (nearest first),
     // [[folder/Note]] and [text](relative/path.md) by path. Empty if it doesn't exist.
     QString resolve(const QString &target, bool wiki, const QString &from) const;
+    // The `aliases:` of a note (also `alias:`), as written.
+    QStringList aliases(const QString &path) const;
+    static QStringList aliasesIn(const md::NoteScan &scan);
+    // The line a link's anchor points to in `text`: a heading (`Heading`, `Parent#Heading`, its GitHub-style slug
+    // `my-heading`, percent-encoded or not, any case) or a block (`^id`). -1 when there's none.
+    static int findAnchor(const QString &text, const QString &anchor);
     // Tags with the number of notes using them, nested ones under their parents ("a/b" counts for "a" too).
     QHash<QString, int> tagCounts() const;
 
@@ -59,11 +65,13 @@ private:
     };
     static Result scan(const QString &root, const Notes &previous);
     void finished();
+    void indexAliases(); // rebuilds m_byAlias from the notes
 
     QString m_root;
     QStringList m_files;
     Notes m_notes;
     QHash<QString, QStringList> m_byName; // lower-case base name (no .md) -> paths
+    QHash<QString, QStringList> m_byAlias; // lower-case alias -> paths
     QFutureWatcher<Result> m_watcher;
     bool m_again = false;
 };

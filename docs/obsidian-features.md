@@ -69,7 +69,7 @@ any text file can be edited, not just Markdown.
 | Word and character count | ✅ | | | |
 | Move line up / down, delete paragraph (Ctrl+D) | ❌ | | P2 | S |
 | Toggle checkbox (Ctrl+L), cycle bullet → checkbox → plain | ❌ | Clicking the box works | P2 | S |
-| Follow the link under the cursor from the keyboard (Alt+Enter; Ctrl+Enter in a new tab) | ❌ | | P2 | S |
+| Follow the link under the cursor from the keyboard (Alt+Enter; Ctrl+Enter in a new tab) | ✅ | Ctrl+Alt+Enter: other pane | | |
 | Insert current date / time | ❌ | Template date formats | P3 | S |
 | "Search for “selection”" in the right-click menu | ❌ | Opens folder search | P2 | S |
 | Image right-click menu: copy image, swap file, remove, delete file; resize by dragging | ❌ | Width goes into `\|300` | P2 | M |
@@ -83,13 +83,13 @@ any text file can be edited, not just Markdown.
 |---|---|---|---|---|
 | `[[Wiki links]]` and `[text](path.md)`, Ctrl+click opens | ✅ | Resolved anywhere in the open folder | | |
 | Link autocomplete while typing `[[` | ❌ | Notes, then `#` headings and `^` blocks | P1 | M |
-| Links to headings `[[Note#Heading]]` | 🟡 | Opens the note, doesn't scroll to the heading | P1 | S |
+| Links to headings `[[Note#Heading]]` | ✅ | Also `#^block`, `[[#Heading]]`, slugs in Markdown links | | |
 | Block references `^id` and `[[Note#^id]]` | ❌ | | P2 | M |
-| Aliases (`[[Note\|alias]]`, `aliases:` property) | 🟡 | Display text works; `aliases:` not used for finding notes | P2 | S |
-| Click a link to a missing note to create it | ❌ | | P1 | S |
+| Aliases (`[[Note\|alias]]`, `aliases:` property) | ✅ | Links and the quick switcher find notes by alias | | |
+| Click a link to a missing note to create it | ✅ | Created next to the current note; unresolved links aren't dimmed yet | | |
 | Update links when a file is renamed or moved | ❌ | Ask or update automatically, as in Obsidian | P1 | M |
 | Rename a heading and update the links to it | ❌ | Right-click "Rename this heading…" | P2 | M |
-| Link right-click: open in new tab / to the right / in new window; act on the target (rename, move, bookmark, reveal) | 🟡 | Open Link and Copy Link Address only | P2 | S |
+| Link right-click: open in new tab / to the right / in new window; act on the target (rename, move, bookmark, reveal) | 🟡 | Open, to the right, copy address and path, reveal, rename; no move/bookmark | P3 | S |
 | New link format option (shortest / relative / absolute), wiki or Markdown links | ❌ | | P2 | S |
 | Backlinks (linked mentions), also under the note | ❌ | The index has everything it needs | P1 | M |
 | Unlinked mentions (with "Link" button) | ❌ | | P2 | M |
@@ -119,7 +119,7 @@ any text file can be edited, not just Markdown.
 | Obsidian | MDEditor | Notes | Prio | Effort |
 |---|---|---|---|---|
 | Quick switcher (Ctrl+O), create a note from it | ✅ | | | |
-| Quick switcher: aliases, headings (`#`), attachments filter | ❌ | | P2 | S |
+| Quick switcher: aliases, headings (`#`), attachments filter | 🟡 | Aliases | P2 | S |
 | Command palette (Ctrl+P) | ✅ | | | |
 | Pinned commands, recently used first | ❌ | | P3 | S |
 | Search in the folder | ✅ | Text, match case, regex, tag results | | |
