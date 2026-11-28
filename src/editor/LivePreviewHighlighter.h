@@ -68,6 +68,10 @@ struct MathMetrics {
 };
 using MathSizeProvider = std::function<MathMetrics(const QString &tex, bool display)>;
 
+// Obsidian's highlight colors: the emoji written after "==" and the color shown.
+const std::vector<std::pair<QString, QColor>> &highlightColors();
+int highlightColorIndex(QStringView emoji); // -1 if it isn't one of them
+
 md::BlockType blockType(const QTextBlock &block);
 bool isTableBlock(const QTextBlock &block);
 QTextBlock tableHeader(QTextBlock block); // first block of the table containing `block`

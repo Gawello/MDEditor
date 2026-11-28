@@ -186,6 +186,8 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Line numbers: a child widget in the viewport's left margin (`updateMargins` makes the margin at least as wide),
   painted by `MarkdownEditor::paintLineNumbers` from the block geometry; lines collapsed to nothing get no number,
   image/embed/formula lines get theirs at the top.
+- Colored highlights: Obsidian 1.15 writes `==🔴text==`; `applyInline` treats the emoji after the opening `==` as a
+  marker and tints the highlight (`highlightColors()`), no parser change.
 - Auto-pairing: `md::pairFor`/`deletesPair` (Qt-free) decide, `MarkdownEditor::autoPair` (start of `keyPressEvent`)
   edits; brackets in every mode, Markdown markers only in Markdown mode; AltGr (Ctrl+Alt) counts as typing.
 - Suggestions: `md::completionAt` (Qt-free) says what's being typed at the cursor; `Completions::suggest` ranks

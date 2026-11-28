@@ -25,6 +25,7 @@
 #include <QUrl>
 #include <QMimeData>
 #include <QTextBlock>
+#include <QTextLayout>
 
 namespace {
 
@@ -542,4 +543,42 @@ TEST_CASE(images_from_the_web)
     other.moveCursor(QTextCursor::End);
     QCoreApplication::processEvents();
     CHECK(requests == before);
+}
+
+TEST_CASE(colored_highlights_like_obsidian)
+{
+    const QString red = highlightColors()[0].first;
+    const QString blue = highlightColors()[4].first;
+    MarkdownEditor editor;
+    editor.setMarkdown(QStringLiteral("word here"));
+    select(editor, 0, 4);
+    editor.toggleHighlightColor(0);
+    CHECK(text(editor) == "==" + red + "word== here");
+    CHECK(editor.textCursor().selectedText() == "word");
+    editor.toggleHighlightColor(4); // another color
+    CHECK(text(editor) == "==" + blue + "word== here");
+    editor.toggleHighlightColor(4); // the same: off
+    CHECK(text(editor) == "word here" && editor.textCursor().selectedText() == "word");
+    editor.setMarkdown(QStringLiteral("==word== x"));
+    select(editor, 2, 6);
+    editor.toggleHighlightColor(0); // a plain highlight gets the color
+    CHECK(text(editor) == "==" + red + "word== x");
+    editor.undo();
+    CHECK(text(editor) == "==word== x");
+
+    // Shown: the emoji hidden (outside the cursor's line), the text on the color.
+    editor.setMarkdown("a ==" + red + "warm== b\nnext");
+    editor.moveCursor(QTextCursor::End);
+    QCoreApplication::processEvents();
+    const QTextBlock line = editor.document()->firstBlock();
+    QColor background;
+    bool emojiHidden = false;
+    for (const QTextLayout::FormatRange &range : line.layout()->formats()) {
+        if (range.start <= 6 && range.start + range.length > 6) // "w"
+            background = range.format.background().color();
+        if (range.start <= 4 && range.start + range.length > 4) // the emoji
+            emojiHidden = range.format.foreground().color().alpha() == 0;
+    }
+    CHECK(background.isValid() && background.red() > 200 && background.alpha() < 120);
+    CHECK(emojiHidden);
 }

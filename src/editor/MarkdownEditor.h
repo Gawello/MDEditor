@@ -56,6 +56,9 @@ public:
     // Line commands, on the cursor's line or every line of the selection, each one undo step. A folded section
     // moves past as a whole.
     bool moveLines(int direction); // -1 up, +1 down; false at the start / end
+    // Obsidian's colored highlight (index into highlightColors()): "==🔴text==". Wraps the selection, changes
+    // the color of a highlight around it or removes it when it has that color already.
+    void toggleHighlightColor(int index);
     void deleteLines();
     void transformLines(const std::function<std::u16string(std::u16string_view)> &change);
     // Changes the text to `text` by replacing only the part that differs, as one undo step: the cursor, the

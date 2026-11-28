@@ -351,6 +351,60 @@ std::pair<QTextBlock, QTextBlock> selectedLines(const QTextCursor &cursor, QText
 
 } // namespace
 
+void MarkdownEditor::toggleHighlightColor(int index)
+{
+    const QString emoji = highlightColors().at(size_t(index)).first;
+    QTextCursor cursor = textCursor();
+    if (!cursor.hasSelection()) { // an empty highlight to type into
+        cursor.insertText(QStringLiteral("==") + emoji + QStringLiteral("=="));
+        cursor.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, 2);
+        setTextCursor(cursor);
+        return;
+    }
+    const QTextBlock block = document()->findBlock(cursor.selectionStart());
+    if (block != document()->findBlock(cursor.selectionEnd()))
+        return;
+    const QString line = block.text();
+    const int from = cursor.selectionStart() - block.position();
+    const int to = cursor.selectionEnd() - block.position();
+    const bool closed = line.mid(to, 2) == u"==";
+    const int current = from >= 4 && line.mid(from - 4, 2) == u"==" ? highlightColorIndex(QStringView(line).mid(from - 2, 2)) : -1;
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    int selectionStart = from;
+    if (closed && current >= 0) { // colored already: off, or another color
+        edit.setPosition(block.position() + from - 2);
+        edit.setPosition(block.position() + from, QTextCursor::KeepAnchor);
+        if (current == index) {
+            edit.removeSelectedText();
+            edit.setPosition(block.position() + to - 2);
+            edit.setPosition(block.position() + to, QTextCursor::KeepAnchor);
+            edit.removeSelectedText();
+            edit.setPosition(block.position() + from - 4);
+            edit.setPosition(block.position() + from - 2, QTextCursor::KeepAnchor);
+            edit.removeSelectedText();
+            selectionStart = from - 4;
+        } else {
+            edit.insertText(emoji);
+        }
+    } else if (closed && from >= 2 && line.mid(from - 2, 2) == u"==") { // a plain highlight: give it the color
+        edit.setPosition(block.position() + from);
+        edit.insertText(emoji);
+        selectionStart = from + int(emoji.size());
+    } else {
+        edit.setPosition(block.position() + to);
+        edit.insertText(QStringLiteral("=="));
+        edit.setPosition(block.position() + from);
+        edit.insertText(QStringLiteral("==") + emoji);
+        selectionStart = from + 2 + int(emoji.size());
+    }
+    edit.endEditBlock();
+    // The text stays selected.
+    cursor.setPosition(block.position() + selectionStart);
+    cursor.setPosition(block.position() + selectionStart + (to - from), QTextCursor::KeepAnchor);
+    setTextCursor(cursor);
+}
+
 bool MarkdownEditor::moveLines(int direction)
 {
     QTextCursor cursor = textCursor();
@@ -2890,6 +2944,15 @@ void MarkdownEditor::addFormatActions(QMenu *menu, const EditorGetter &target, b
         connect(action, &QAction::triggered, menu, [target, marker] {
             if (MarkdownEditor *editor = target())
                 editor->toggleWrap(marker);
+        });
+    }
+    QMenu *colors = menu->addMenu(tr("Hi&ghlight Color"));
+    const char *names[] = {QT_TR_NOOP("&Red"), QT_TR_NOOP("&Orange"), QT_TR_NOOP("&Yellow"),
+                           QT_TR_NOOP("&Green"), QT_TR_NOOP("&Blue"), QT_TR_NOOP("&Purple")};
+    for (int i = 0; i < int(std::size(names)); ++i) {
+        connect(colors->addAction(tr(names[i])), &QAction::triggered, menu, [target, i] {
+            if (MarkdownEditor *editor = target())
+                editor->toggleHighlightColor(i);
         });
     }
     menu->addSeparator();

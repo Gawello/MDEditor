@@ -78,6 +78,29 @@ QTextBlock calloutStart(QTextBlock block)
     return {};
 }
 
+const std::vector<std::pair<QString, QColor>> &highlightColors()
+{
+    static const std::vector<std::pair<QString, QColor>> colors{
+        {QStringLiteral("\U0001F534"), QColor(0xe9, 0x31, 0x47)}, // red
+        {QStringLiteral("\U0001F7E0"), QColor(0xec, 0x75, 0x00)}, // orange
+        {QStringLiteral("\U0001F7E1"), QColor(0xe0, 0xac, 0x00)}, // yellow
+        {QStringLiteral("\U0001F7E2"), QColor(0x08, 0xb9, 0x4e)}, // green
+        {QStringLiteral("\U0001F535"), QColor(0x08, 0x6d, 0xdd)}, // blue
+        {QStringLiteral("\U0001F7E3"), QColor(0x78, 0x52, 0xee)}, // purple
+    };
+    return colors;
+}
+
+int highlightColorIndex(QStringView emoji)
+{
+    const auto &colors = highlightColors();
+    for (size_t i = 0; i < colors.size(); ++i) {
+        if (emoji == colors[i].first)
+            return int(i);
+    }
+    return -1;
+}
+
 LivePreviewHighlighter::LivePreviewHighlighter(QTextDocument *document, const EditorTheme *theme)
     : QSyntaxHighlighter(document)
     , m_theme(theme)
@@ -515,11 +538,29 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
     const md::InlineResult parsed = md::parseInline(toView(text));
     const int n = int(parsed.styles.size());
 
+    // Obsidian 1.15's colored highlights: "==🔴text==". The emoji after the opening "==" picks the color and
+    // is hidden like a marker.
+    std::vector<int> color(size_t(n), -1); // index into highlightColors(), for the highlighted text
+    std::vector<char> colorMark(size_t(n), 0);
+    for (int k = 0; k + 3 < n; ++k) {
+        if (!(parsed.styles[k] & md::Marker) || text[k] != u'=' || text[k + 1] != u'=' || !(parsed.styles[k + 2] & md::Highlight)
+            || (parsed.styles[k + 2] & md::Marker))
+            continue;
+        const int which = highlightColorIndex(QStringView(text).mid(k + 2, 2));
+        if (which < 0)
+            continue;
+        colorMark[size_t(k + 2)] = colorMark[size_t(k + 3)] = 1;
+        for (int c = k + 2; c < n && (parsed.styles[c] & md::Highlight) && !(parsed.styles[c] & md::Marker); ++c)
+            color[size_t(c)] = which;
+        k += 3;
+    }
+
     int i = 0;
     while (i < n) {
         const std::uint16_t style = parsed.styles[i];
         int j = i + 1;
-        while (j < n && parsed.styles[j] == style)
+        while (j < n && parsed.styles[j] == style && color[size_t(j)] == color[size_t(i)]
+               && colorMark[size_t(j)] == colorMark[size_t(i)])
             ++j;
 
         if (style != 0) {
@@ -530,8 +571,15 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
                 format.setFontItalic(true);
             if (style & md::Strike)
                 format.setFontStrikeOut(true);
-            if (style & md::Highlight)
-                format.setBackground(m_theme->highlightBackground);
+            if (style & md::Highlight) {
+                if (color[size_t(i)] >= 0) {
+                    QColor tint = highlightColors()[size_t(color[size_t(i)])].second;
+                    tint.setAlphaF(0.3f);
+                    format.setBackground(tint);
+                } else {
+                    format.setBackground(m_theme->highlightBackground);
+                }
+            }
             if (style & md::Code) {
                 format.setFontFamilies(m_theme->monoFamilies);
                 format.setForeground(m_theme->codeText);
@@ -557,7 +605,7 @@ void LivePreviewHighlighter::applyInline(const QString &text, int offset, const 
                 format.setForeground(m_theme->accent);
                 format.setVerticalAlignment(QTextCharFormat::AlignSuperScript);
             }
-            if ((style & md::Marker) && !(style & md::Comment))
+            if (((style & md::Marker) && !(style & md::Comment)) || colorMark[size_t(i)])
                 format = active ? dimmed(format) : collapsed(format);
             setFormat(offset + i, j - i, format);
         }

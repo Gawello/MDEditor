@@ -64,6 +64,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   dropped on the tab bar they open. Right-click a selection: Search for “…” in the folder
 - Formatted text pasted or dropped from web pages, Word or Excel becomes Markdown (headings, emphasis, links, images,
   lists, tables, code); Ctrl+Shift+V pastes plain text. Copying gives the Markdown itself, as plain text
+- Colored highlights as in Obsidian 1.15 (`==🔴text==`, Format → Highlight Color: red, orange, yellow, green, blue,
+  purple), the emoji hidden and the text on the color
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`
   groups, all matches highlighted, Replace All as one undo step

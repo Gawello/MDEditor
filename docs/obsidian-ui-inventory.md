@@ -23,7 +23,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 |---|---|---|
 | Add link / Add external link | ✅ | |
 | **Format ▸** Bold, Italic, Strikethrough | ✅ | |
-| Format ▸ Highlight ▸ Default, Red, Orange, Yellow, Green, Blue, Purple | 🟡 | One color only. Colored highlights are new in 1.15 (commands "Toggle red highlight"…) |
+| Format ▸ Highlight ▸ Default, Red, Orange, Yellow, Green, Blue, Purple | ✅ | Written `==🔴text==` (an emoji after `==`), as Obsidian 1.15 does |
 | Format ▸ Code, Math, Comment | ✅ | |
 | Format ▸ Clear formatting | ✅ | |
 | **Paragraph ▸** Bullet list, Numbered list, Task list | ✅ | |
@@ -164,7 +164,7 @@ out.
 | Command | MDEditor |
 |---|---|
 | Toggle bold [Ctrl+B], italic [Ctrl+I], strikethrough, highlight, code, inline math, comment [Ctrl+/] | ✅ (comment has no shortcut) |
-| Toggle red / orange / yellow / green / blue / purple highlight | ❌ |
+| Toggle red / orange / yellow / green / blue / purple highlight | ✅ |
 | Clear formatting | ✅ |
 | Toggle bullet list, numbered list, blockquote; Set as heading 1–6, Toggle heading, Remove heading | ✅ |
 | Toggle checkbox status [Ctrl+L], Cycle bullet/checkbox | ✅ |

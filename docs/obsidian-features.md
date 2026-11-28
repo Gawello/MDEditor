@@ -21,7 +21,7 @@ any text file can be edited, not just Markdown.
 | Source mode (raw Markdown, still highlighted) | 🟡 | Ctrl+E switches to plain text without colors | P2 | S |
 | Reading view (rendered, read-only, no markers anywhere) | ❌ | | P2 | M |
 | Headings, bold, italic, strikethrough, `==highlight==`, inline code | ✅ | | | |
-| Colored highlights (red, orange, yellow, green, blue, purple; new in 1.15) | ❌ | Format ▸ Highlight ▸ submenu | P3 | S |
+| Colored highlights (red, orange, yellow, green, blue, purple; new in 1.15) | ✅ | `==🔴text==`, as Obsidian writes it | | |
 | Bullet, numbered and task lists, nested | ✅ | | | |
 | Custom task statuses (`[/]`, `[-]`, `[>]`…) | ❌ | Rendered as icons by many themes | P3 | S |
 | Tables with rich editing | ✅ | Row/column menus, sort, alignment, Prettify | | |
