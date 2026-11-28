@@ -72,7 +72,7 @@ any text file can be edited, not just Markdown.
 | Follow the link under the cursor from the keyboard (Alt+Enter; Ctrl+Enter in a new tab) | ✅ | Ctrl+Alt+Enter: other pane | | |
 | Insert current date / time | ❌ | Template date formats | P3 | S |
 | "Search for “selection”" in the right-click menu | ✅ | | | |
-| Image right-click menu: copy image, swap file, remove, delete file; resize by dragging | ❌ | Width goes into `\|300` | P2 | M |
+| Image right-click menu: copy image, swap file, remove, delete file; resize by dragging | ✅ | No "swap file" | | |
 | Callout right-click: change type (Info, Tip, Warning…), edit | ❌ | | P3 | S |
 | Edit link / edit tag dialogs, "Delete footnote and reference" | ❌ | | P3 | S |
 | Prettify / format code | ✅ | MDEditor extra: JSON, XML, CSS, C-like, Python, tables | | |

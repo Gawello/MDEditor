@@ -126,6 +126,11 @@ public:
     // Formatted text (a web page, Word, Excel) as Markdown: headings, emphasis, links, images, lists, tables, code.
     // Empty when the HTML holds nothing worth converting (plain text wrapped in tags).
     static QString htmlToMarkdown(const QString &html);
+    // `line` (a line holding one image link) with the width hint set: ![[img.png|300]], ![alt|300](img.png);
+    // 0 removes it. The line as it was when it isn't such a line.
+    static QString withImageWidth(const QString &line, int width);
+    // The image shown on `block` (not an embedded note), in viewport coordinates.
+    std::optional<QRectF> imageRect(const QTextBlock &block) const;
     // What an embed or a preview shows of a note: without the front matter, only the section (`Heading`) or
     // block (`^id`) when `anchor` names one, and [[links]] as their text, which QTextDocument can't show.
     static QString excerpt(const QString &text, const QString &anchor);
@@ -149,6 +154,7 @@ signals:
     void revealRequested(const QString &path); // the link menu's Reveal in Folder Panel
     void renameRequested(const QString &path); // ...and Rename
     void searchRequested(const QString &text);  // the menu's Search for “selection”
+    void deleteFileRequested(const QString &path); // an image's Delete Image File (the window asks first)
     void filesDropped(const QStringList &paths);
     void statusMessage(const QString &message);
     void markdownModeChanged(bool on);
@@ -165,6 +171,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void changeEvent(QEvent *event) override;
@@ -275,6 +282,12 @@ private:
     void hideCompletion();
     CompletionPopup *m_completion = nullptr;
     QWidget *m_lineNumbers = nullptr;
+    // Dragging an image's right edge: the line and the width so far (-1: not resizing).
+    int m_resizeBlock = -1;
+    qreal m_resizeWidth = 0;
+    qreal m_resizeGrab = 0; // where the edge was grabbed, from the image's left
+    bool atImageEdge(const QPoint &pos, QTextBlock *block = nullptr) const;
+    void addImageActions(QMenu *menu, const QTextBlock &block);
     void updateLineNumbers();
     // Page preview: shown after the mouse rests on a link with Ctrl held.
     void startPreview(const QPoint &viewportPos);

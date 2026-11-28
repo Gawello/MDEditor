@@ -52,7 +52,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Tag `#tag` | Edit tag | ❌ |
 | Footnote reference | Delete footnote and reference | ❌ |
 | Embedded note `![[…]]` | Same as an internal link | ❌ |
-| Image | Copy image, Swap file…, Remove image, Reset size, Delete image (the file) + the file entries | ❌ |
+| Image | Copy image, Swap file…, Remove image, Reset size, Delete image (the file) + the file entries | 🟡 no Swap file; open, copy, path, reveal, reset size, remove, delete; drag the edge to resize |
 | Callout box | Edit, Callout type ▸ Info, Important, Tip, Success, Question, Warning, Example, Quote, Other…, None | ❌ |
 | Table cell | Same as text; table commands are in the palette (below) | ✅ MDEditor has a Table submenu |
 | Property name icon | Property type ▸ Checkbox, Date, Date & time, List, Number, Tags, Text; Cut, Copy, Paste; Remove | ❌ |

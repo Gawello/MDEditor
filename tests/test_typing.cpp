@@ -10,7 +10,9 @@
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFile>
+#include <QImage>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QMenu>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -409,4 +411,72 @@ TEST_CASE(line_numbers_follow_the_setting)
     CHECK(!editor.grab().isNull()); // paints
     AppSettings::instance().setValue(QString::fromLatin1(AppSettings::lineNumbersKey), false);
     CHECK(editor.lineNumberArea() == nullptr);
+}
+
+TEST_CASE(image_width_hints)
+{
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![[a.png]]"), 300) == "![[a.png|300]]");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![[a b.png|200]]"), 300) == "![[a b.png|300]]");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![[a.png|200]]"), 0) == "![[a.png]]");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![alt](a.png)"), 300) == "![alt|300](a.png)");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![alt|200](a.png)"), 120) == "![alt|120](a.png)");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("![alt|200](a.png)"), 0) == "![alt](a.png)");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("  ![](a.png)"), 50) == "  ![|50](a.png)");
+    CHECK(MarkdownEditor::withImageWidth(QStringLiteral("text ![[a.png]] [[b]]"), 50) == "text ![[a.png]] [[b]]");
+}
+
+TEST_CASE(images_resize_by_dragging_and_have_a_menu)
+{
+    QTemporaryDir dir;
+    QImage picture(400, 200, QImage::Format_RGB32);
+    picture.fill(Qt::darkCyan);
+    CHECK(picture.save(dir.filePath(QStringLiteral("pic.png"))));
+    MarkdownEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.resize(900, 600);
+    editor.show();
+    editor.setDocumentPath(dir.filePath(QStringLiteral("Note.md")));
+    editor.setMarkdown(QStringLiteral("top\n![](pic.png)\nend"));
+    editor.moveCursor(QTextCursor::End);
+    QCoreApplication::processEvents();
+    const QTextBlock line = editor.document()->findBlockByNumber(1);
+    const auto rect = editor.imageRect(line);
+    CHECK(rect.has_value() && std::abs(rect->width() - 400) < 1);
+    if (!rect)
+        return;
+
+    // Drag the right edge 100 px to the left: the link gets |300, the cursor stays on "end".
+    const QPoint grab(int(rect->right()), int(rect->bottom() - 10));
+    QMouseEvent press(QEvent::MouseButtonPress, grab, editor.viewport()->mapToGlobal(grab), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &press);
+    const QPoint to = grab - QPoint(100, 0);
+    QMouseEvent move(QEvent::MouseMove, to, editor.viewport()->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &move);
+    QMouseEvent release(QEvent::MouseButtonRelease, to, editor.viewport()->mapToGlobal(to), Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &release);
+    CHECK(editor.document()->findBlockByNumber(1).text() == "![|300](pic.png)");
+    CHECK(editor.textCursor().blockNumber() == 2);
+    editor.undo();
+    CHECK(editor.document()->findBlockByNumber(1).text() == "![](pic.png)");
+    editor.moveCursor(QTextCursor::End); // undo put the cursor on the image's line, which shows it as text
+
+    // The menu on the image: its own entries, and the cursor doesn't go there.
+    QCoreApplication::processEvents();
+    const auto shownRect = editor.imageRect(editor.document()->findBlockByNumber(1));
+    CHECK(shownRect.has_value());
+    if (!shownRect)
+        return;
+    std::unique_ptr<QMenu> menu = editor.createContextMenu(shownRect->center().toPoint());
+    QStringList entries;
+    for (QAction *action : menu->actions())
+        entries << action->text().remove(u'&').section(u'\t', 0, 0);
+    CHECK(entries.contains("Open Image") && entries.contains("Copy Image") && entries.contains("Delete Image File…"));
+    CHECK(!entries.contains("Open Link"));
+    for (QAction *action : menu->actions()) {
+        if (action->text().remove(u'&') == QStringLiteral("Reset Size"))
+            CHECK(!action->isEnabled()); // no width to reset
+    }
+    CHECK(editor.textCursor().blockNumber() == 2);
 }

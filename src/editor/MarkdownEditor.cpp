@@ -789,8 +789,127 @@ void MarkdownEditor::acceptCompletion(int row)
     m_completionStart = -1;
 }
 
+QString MarkdownEditor::withImageWidth(const QString &line, int width)
+{
+    const md::InlineResult parsed = md::parseInline(toView(line));
+    if (parsed.links.size() != 1 || !parsed.links.front().image)
+        return line;
+    const md::LinkRange &link = parsed.links.front();
+    const QString hint = width > 0 ? QString::number(width) : QString();
+    QString result = line;
+    if (link.wiki) { // ![[target|hint]]: the part after the pipe, or a new one before "]]"
+        const bool piped = link.textStart != link.urlStart;
+        if (piped)
+            result.replace(link.textStart - 1, link.textEnd - link.textStart + 1, hint.isEmpty() ? QString() : u'|' + hint);
+        else if (!hint.isEmpty())
+            result.insert(link.urlEnd, u'|' + hint);
+        return result;
+    }
+    // ![alt|hint](target): after the alt text's last pipe
+    const QString alt = line.mid(link.textStart, link.textEnd - link.textStart);
+    QString newAlt = alt.contains(u'|') ? alt.section(u'|', 0, -2) : alt;
+    if (!hint.isEmpty())
+        newAlt += u'|' + hint;
+    result.replace(link.textStart, link.textEnd - link.textStart, newAlt);
+    return result;
+}
+
+std::optional<QRectF> MarkdownEditor::imageRect(const QTextBlock &block) const
+{
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    if (!data || !data->imageShown || !block.isVisible())
+        return std::nullopt;
+    if (!cachedImage(data->image))
+        return std::nullopt; // an embedded note
+    const QSizeF size = imageDisplaySize(data->image, data->imageWidth);
+    if (size.isEmpty())
+        return std::nullopt;
+    const QRectF r = blockBoundingGeometry(block).translated(contentOffset());
+    return QRectF(contentOffset().x() + document()->documentMargin(), r.top() + imageVerticalPadding, size.width(),
+                  size.height());
+}
+
+void MarkdownEditor::addImageActions(QMenu *menu, const QTextBlock &block)
+{
+    const auto *data = static_cast<const BlockData *>(block.userData());
+    if (!data)
+        return;
+    const QString file = linkFile(data->image);
+    const int line = block.blockNumber();
+    menu->addAction(tr("&Open Image"), this, [file] { QDesktopServices::openUrl(QUrl::fromLocalFile(file)); });
+    menu->addAction(tr("Copy I&mage"), this, [file] { QGuiApplication::clipboard()->setImage(QImage(file)); });
+    menu->addAction(tr("Copy Image Pat&h"), this,
+                    [file] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file)); });
+    menu->addAction(tr("Re&veal in Folder Panel"), this, [this, file] { emit revealRequested(file); });
+    menu->addSeparator();
+    QAction *reset = menu->addAction(tr("Reset Si&ze"), this, [this, line] {
+        const QTextBlock target = document()->findBlockByNumber(line);
+        QTextCursor edit(target);
+        edit.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        edit.insertText(withImageWidth(target.text(), 0));
+    });
+    reset->setEnabled(data->imageWidth > 0);
+    menu->addAction(tr("Remove Image Lin&k"), this, [this, line] {
+        QTextCursor edit(document()->findBlockByNumber(line));
+        edit.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        edit.removeSelectedText();
+    });
+    menu->addAction(tr("&Delete Image File…"), this, [this, file] {
+        // Queued: the window's question shouldn't run inside the menu's event loop.
+        QMetaObject::invokeMethod(this, [this, file] { emit deleteFileRequested(file); }, Qt::QueuedConnection);
+    });
+}
+
+bool MarkdownEditor::atImageEdge(const QPoint &pos, QTextBlock *found) const
+{
+    if (!m_markdown || isReadOnly())
+        return false;
+    const QTextBlock block = cursorForPosition(pos).block();
+    if (block.blockNumber() == textCursor().blockNumber())
+        return false; // the line being edited shows its text
+    const auto rect = imageRect(block);
+    if (!rect)
+        return false;
+    // The right edge, over the lower two thirds (the corner Obsidian shows a handle in).
+    const bool edge = std::abs(pos.x() - rect->right()) <= 6 && pos.y() >= rect->top() + rect->height() / 3
+                      && pos.y() <= rect->bottom() + 4;
+    if (edge && found)
+        *found = block;
+    return edge;
+}
+
+void MarkdownEditor::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_resizeBlock >= 0 && event->button() == Qt::LeftButton) {
+        const QTextBlock block = document()->findBlockByNumber(m_resizeBlock);
+        m_resizeBlock = -1;
+        viewport()->unsetCursor();
+        if (block.isValid()) {
+            const QString changed = withImageWidth(block.text(), int(std::round(m_resizeWidth)));
+            if (changed != block.text()) {
+                QTextCursor edit(block);
+                edit.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+                edit.insertText(changed); // the cursor stays where it was: the image stays an image
+            }
+        }
+        viewport()->update();
+        return;
+    }
+    QPlainTextEdit::mouseReleaseEvent(event);
+}
+
 void MarkdownEditor::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton) {
+        QTextBlock block;
+        if (atImageEdge(event->position().toPoint(), &block)) {
+            const QRectF rect = *imageRect(block);
+            m_resizeBlock = block.blockNumber();
+            m_resizeWidth = rect.width();
+            m_resizeGrab = event->position().x() - rect.left();
+            return; // no cursor move: the line would turn into text
+        }
+    }
     if (event->button() == Qt::LeftButton && m_markdown) {
         const QPoint pos = event->position().toPoint();
         if (const QTextBlock block = foldableBlockAt(pos); block.isValid()) {
@@ -833,7 +952,10 @@ void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
         const QTextCursor current = textCursor();
         const int hit = cursorForPosition(pos).position();
         const bool onSelection = current.hasSelection() && hit >= current.selectionStart() && hit < current.selectionEnd();
-        if (!onSelection && !(m_markdown && focusTableCellAt(pos)))
+        // An image stays an image: its menu acts on the line without the cursor going there.
+        const QTextBlock clicked = cursorForPosition(pos).block();
+        const auto image = clicked != current.block() ? imageRect(clicked) : std::nullopt;
+        if (!onSelection && !(image && image->contains(pos)) && !(m_markdown && focusTableCellAt(pos)))
             setTextCursor(cursorForPosition(pos));
     }
     const std::unique_ptr<QMenu> menu = createContextMenu(event->reason() == QContextMenuEvent::Mouse
@@ -844,6 +966,19 @@ void MarkdownEditor::contextMenuEvent(QContextMenuEvent *event)
 
 void MarkdownEditor::mouseMoveEvent(QMouseEvent *event)
 {
+    if (m_resizeBlock >= 0) {
+        const QTextBlock block = document()->findBlockByNumber(m_resizeBlock);
+        if (const auto rect = imageRect(block)) {
+            const qreal available = viewport()->width() - 2 * document()->documentMargin();
+            m_resizeWidth = std::clamp(event->position().x() - rect->left() - (m_resizeGrab - rect->width()), 32.0, available);
+            viewport()->update();
+        }
+        return;
+    }
+    if (event->buttons() == Qt::NoButton && atImageEdge(event->position().toPoint())) {
+        viewport()->setCursor(Qt::SizeHorCursor);
+        return;
+    }
     QPlainTextEdit::mouseMoveEvent(event);
     if (m_markdown) {
         const int hover = cursorForPosition(event->position().toPoint()).blockNumber();
@@ -1081,6 +1216,22 @@ void MarkdownEditor::paintEvent(QPaintEvent *event)
         }
         default:
             break;
+        }
+    }
+
+    // An image being resized: its new outline and width.
+    if (m_resizeBlock >= 0) {
+        if (const auto rect = imageRect(document()->findBlockByNumber(m_resizeBlock)); rect && rect->width() > 0) {
+            const QRectF outline(rect->topLeft(), QSizeF(m_resizeWidth, m_resizeWidth * rect->height() / rect->width()));
+            painter.setPen(QPen(m_theme.accent, 2, Qt::DashLine));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(outline);
+            const QString label = tr("%1 px").arg(int(std::round(m_resizeWidth)));
+            const QRectF box(outline.bottomRight() - QPointF(fontMetrics().horizontalAdvance(label) + 12, fontMetrics().height() + 6),
+                             outline.bottomRight());
+            painter.fillRect(box, m_theme.accent);
+            painter.setPen(palette().color(QPalette::HighlightedText));
+            painter.drawText(box, Qt::AlignCenter, label);
         }
     }
 }
@@ -2918,7 +3069,12 @@ std::unique_ptr<QMenu> MarkdownEditor::createContextMenu(const QPoint &pos)
     const bool selection = textCursor().hasSelection();
     addSpellingActions(menu.get(), cursorForPosition(pos).position());
 
-    if (m_markdown) {
+    const QTextBlock clicked = cursorForPosition(pos).block();
+    const auto image = m_markdown && clicked != textCursor().block() ? imageRect(clicked) : std::nullopt;
+    if (image && image->contains(pos)) {
+        addImageActions(menu.get(), clicked);
+        menu->addSeparator();
+    } else if (m_markdown) {
         if (const auto target = linkTargetAt(pos)) {
             const QString link = *target;
             const QString file = linkFile(link);

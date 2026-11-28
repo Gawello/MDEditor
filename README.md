@@ -45,6 +45,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   note's links, those to notes not created yet apart. Ctrl+hover over a link previews the note
 - Renaming or moving a note or folder in the open folder updates the links to it (and the relative links of the
   notes it holds): asked first by default, or always / never (Settings → Notes)
+- Images: drag an image's right edge to resize it (the width goes into the link, `![[pic.png|300]]`); right-click
+  it to open, copy, reveal, reset its size, remove the link or delete the file
 - Line numbers (View → Line Numbers, or Settings → Editor), next to the text column
 - Slash commands: `/` at the start of a line or after a space lists every menu command, filtered as you type;
   Enter runs it (Settings → Editor)

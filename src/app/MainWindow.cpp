@@ -1210,6 +1210,7 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
             });
     connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
     connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
+    connect(tab->editor(), &MarkdownEditor::deleteFileRequested, this, &MainWindow::deletePath);
     connect(tab->editor(), &MarkdownEditor::searchRequested, this, [this](const QString &text) {
         m_sideBar->show();
         m_sideBar->showPage(m_search);
