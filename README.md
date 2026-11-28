@@ -39,7 +39,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Links: `[text](url)`, bare URLs and `[[wiki links]]`. Ctrl+click or Alt+Enter opens them (relative links resolve next to
   the current file), Ctrl+Alt+click or Ctrl+Alt+Enter in the other pane. `[[Note#Heading]]`, `[[Note#^block]]`,
   `[[#Heading]]` and `[x](Note.md#heading-slug)` scroll to the heading or block; `[[Note]]` also finds a note by
-  its `aliases:`; following a link to a note that doesn't exist creates it next to the current note
+  its `aliases:`; following a link to a note that doesn't exist creates it where new notes go
 - Backlinks (View → Backlinks, or the "N backlinks" button in the status bar): the notes linking to this one with
   their lines, and unlinked mentions of its name or aliases with a Link button that turns one into a `[[link]]`
   (closed notes are changed on disk with their own encoding and line endings). View → Outgoing Links lists this
