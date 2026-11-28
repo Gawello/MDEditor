@@ -232,3 +232,66 @@ TEST_CASE(graph_links_notes)
     graph.setLocal(true);
     CHECK(graph.nodeCount() == 2 && graph.edgeCount() == 1);
 }
+
+TEST_CASE(graph_settings_filter_and_add_nodes)
+{
+    QTemporaryDir dir;
+    writeNote(dir.filePath("A.md"), "[[B]] [[Nowhere]] ![[pic.png]] #red\n");
+    writeNote(dir.filePath("B.md"), "[[C]] #red/dark\n");
+    writeNote(dir.filePath("C.md"), "[[D]]\n");
+    writeNote(dir.filePath("D.md"), "end\n");
+    writeNote(dir.filePath("work/Lonely.md"), "nothing\n");
+    writeNote(dir.filePath("pic.png"), "png");
+    NoteIndex index;
+    index.setRoot(dir.path());
+    CHECK(waitFor([&index] { return !index.scanning() && index.notes().size() == 5; }));
+    GraphView graph(&index);
+    QStringList names = graph.nodeNames();
+    names.sort();
+    CHECK((names == QStringList{"A", "B", "C", "D", "Lonely"}));
+
+    GraphView::Settings settings;
+    settings.tags = true;
+    settings.attachments = true;
+    settings.existingOnly = false;
+    graph.setSettings(settings);
+    names = graph.nodeNames();
+    CHECK(names.contains("#red") && names.contains("#red/dark") && names.contains("pic.png") && names.contains("Nowhere"));
+    CHECK(graph.kindOf("#red") == GraphView::Kind::Tag && graph.kindOf("pic.png") == GraphView::Kind::Attachment
+          && graph.kindOf("Nowhere") == GraphView::Kind::Missing);
+
+    settings = {};
+    settings.orphans = false;
+    graph.setSettings(settings);
+    CHECK(!graph.nodeNames().contains("Lonely"));
+    settings = {};
+    settings.filter = QStringLiteral("work");
+    graph.setSettings(settings);
+    CHECK(graph.nodeNames() == QStringList{"Lonely"});
+    settings.filter = QStringLiteral("tag:red");
+    graph.setSettings(settings);
+    names = graph.nodeNames();
+    names.sort();
+    CHECK((names == QStringList{"A", "B"})); // #red/dark counts for #red
+
+    // The local graph, one and two links away.
+    settings = {};
+    graph.setSettings(settings);
+    graph.setCurrent(dir.filePath("A.md"));
+    graph.setLocal(true);
+    names = graph.nodeNames();
+    names.sort();
+    CHECK((names == QStringList{"A", "B"}));
+    settings.depth = 2;
+    graph.setSettings(settings);
+    names = graph.nodeNames();
+    names.sort();
+    CHECK((names == QStringList{"A", "B", "C"}));
+    // Forces only: the same nodes, laid out again.
+    settings.repelForce = 2;
+    graph.setSettings(settings);
+    CHECK(graph.nodeCount() == 3);
+    for (int i = 0; i < 600 && !graph.settled(); ++i)
+        graph.step();
+    CHECK(graph.settled());
+}

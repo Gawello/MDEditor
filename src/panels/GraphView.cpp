@@ -4,9 +4,11 @@
 #include "editor/MarkdownEditor.h"
 #include "notes/NoteIndex.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPolygonF>
 #include <QRandomGenerator>
 #include <QSet>
 #include <QWheelEvent>
@@ -54,6 +56,38 @@ void GraphView::setLocal(bool local)
     rebuild();
 }
 
+void GraphView::setSettings(const Settings &settings)
+{
+    if (settings == m_settings)
+        return;
+    const bool layoutOnly = settings.filter == m_settings.filter && settings.tags == m_settings.tags
+                            && settings.attachments == m_settings.attachments
+                            && settings.existingOnly == m_settings.existingOnly && settings.orphans == m_settings.orphans
+                            && settings.depth == m_settings.depth;
+    m_settings = settings;
+    if (layoutOnly)
+        reheat(); // forces or arrows
+    else
+        rebuild();
+}
+
+QStringList GraphView::nodeNames() const
+{
+    QStringList names;
+    for (const Node &node : m_nodes)
+        names << node.name;
+    return names;
+}
+
+GraphView::Kind GraphView::kindOf(const QString &name) const
+{
+    for (const Node &node : m_nodes) {
+        if (node.name == name)
+            return node.kind;
+    }
+    return Kind::Note;
+}
+
 void GraphView::rebuild()
 {
     // Keep where the notes already are, so a refresh doesn't scatter the layout.
@@ -61,49 +95,117 @@ void GraphView::rebuild()
     for (const Node &node : m_nodes)
         previous.insert(node.path, node.position);
 
+    // Nodes: the notes, then (as the settings say) tags, attachments and notes not created yet, which links add.
     QHash<QString, int> ids;
     std::vector<Node> nodes;
-    QList<QString> paths;
-    for (auto it = m_index->notes().cbegin(); it != m_index->notes().cend(); ++it)
-        paths << it.key();
-    paths.sort();
-    for (const QString &path : std::as_const(paths)) {
-        ids.insert(path, int(nodes.size()));
+    const auto nodeFor = [&](const QString &key, const QString &name, Kind kind) {
+        if (const auto it = ids.constFind(key); it != ids.constEnd())
+            return *it;
+        ids.insert(key, int(nodes.size()));
         Node node;
-        node.path = path;
-        node.name = QFileInfo(path).completeBaseName();
+        node.path = key;
+        node.name = name;
+        node.kind = kind;
         nodes.push_back(node);
+        return int(nodes.size()) - 1;
+    };
+    // The filter: words of the path, or tag:x.
+    const QString filter = m_settings.filter.trimmed();
+    const QString tagFilter = filter.startsWith(QStringLiteral("tag:"), Qt::CaseInsensitive) ? filter.mid(4).remove(u'#') : QString();
+    const QStringList words = tagFilter.isEmpty() ? filter.split(u' ', Qt::SkipEmptyParts) : QStringList();
+    const QDir root(m_index->root());
+    QList<QString> paths;
+    for (auto it = m_index->notes().cbegin(); it != m_index->notes().cend(); ++it) {
+        const QString relative = root.relativeFilePath(it.key());
+        bool keep = std::all_of(words.cbegin(), words.cend(),
+                                [&relative](const QString &word) { return relative.contains(word, Qt::CaseInsensitive); });
+        if (!tagFilter.isEmpty()) {
+            keep = false;
+            for (const std::u16string &tag : (*it)->scan.tags) {
+                const QString name = QString::fromStdU16String(tag);
+                keep = keep || name.compare(tagFilter, Qt::CaseInsensitive) == 0
+                       || name.startsWith(tagFilter + u'/', Qt::CaseInsensitive);
+            }
+        }
+        if (keep)
+            paths << it.key();
     }
+    paths.sort();
+    for (const QString &path : std::as_const(paths))
+        nodeFor(path, QFileInfo(path).completeBaseName(), Kind::Note);
+
     QSet<std::pair<int, int>> seen;
-    std::vector<std::pair<int, int>> edges;
+    std::vector<std::pair<int, int>> edges; // from, to
+    const auto link = [&](int a, int b) {
+        if (a < 0 || b < 0 || a == b)
+            return;
+        const auto key = std::pair(std::min(a, b), std::max(a, b));
+        if (seen.contains(key))
+            return;
+        seen.insert(key);
+        edges.push_back({a, b});
+    };
     for (const QString &path : std::as_const(paths)) {
         const auto &note = m_index->notes().value(path);
-        for (const md::NoteLink &link : note->scan.links) {
-            const QString target = m_index->resolve(QString::fromStdU16String(link.target), link.wiki, path);
-            const int a = ids.value(path, -1);
-            const int b = ids.value(target, -1);
-            if (a < 0 || b < 0 || a == b)
+        const int from = ids.value(path, -1);
+        for (const md::NoteLink &noteLink : note->scan.links) {
+            const QString written = QString::fromStdU16String(noteLink.target);
+            const QString target = m_index->resolveIndexed(written, noteLink.wiki, path); // no disk access
+            if (target.isEmpty()) {
+                if (!m_settings.existingOnly && noteLink.wiki && !noteLink.embed)
+                    link(from, nodeFor(u"missing:" + written.toLower(), QFileInfo(written).completeBaseName(), Kind::Missing));
                 continue;
-            const auto key = std::pair(std::min(a, b), std::max(a, b));
-            if (seen.contains(key))
-                continue;
-            seen.insert(key);
-            edges.push_back(key);
+            }
+            if (ids.contains(target)) {
+                link(from, ids.value(target));
+            } else if (m_settings.attachments && !MarkdownEditor::isMarkdownFile(target)) {
+                link(from, nodeFor(target, QFileInfo(target).fileName(), Kind::Attachment));
+            }
+        }
+        if (m_settings.tags) {
+            for (const std::u16string &tag : note->scan.tags) {
+                const QString name = QString::fromStdU16String(tag);
+                link(from, nodeFor(u"tag:" + name.toLower(), u'#' + name, Kind::Tag));
+            }
         }
     }
 
-    if (m_local) { // the current note and its neighbors only
+    // What stays: the local graph (links within `depth` steps of the current note), then orphans or not.
+    QSet<int> keep;
+    if (m_local) {
         const int center = ids.value(m_current, -1);
-        QSet<int> keep;
         if (center >= 0) {
+            QSet<int> frontier{center};
             keep.insert(center);
-            for (const auto &[a, b] : edges) {
-                if (a == center)
-                    keep.insert(b);
-                if (b == center)
-                    keep.insert(a);
+            for (int step = 0; step < std::max(1, m_settings.depth); ++step) {
+                QSet<int> next;
+                for (const auto &[a, b] : edges) {
+                    if (frontier.contains(a) && !keep.contains(b))
+                        next.insert(b);
+                    if (frontier.contains(b) && !keep.contains(a))
+                        next.insert(a);
+                }
+                keep.unite(next);
+                frontier = next;
             }
         }
+    } else {
+        for (int i = 0; i < int(nodes.size()); ++i)
+            keep.insert(i);
+    }
+    if (!m_settings.orphans) {
+        QSet<int> linked;
+        for (const auto &[a, b] : edges) {
+            if (keep.contains(a) && keep.contains(b)) {
+                linked.insert(a);
+                linked.insert(b);
+            }
+        }
+        keep.intersect(linked);
+        if (m_local && ids.contains(m_current))
+            keep.insert(ids.value(m_current)); // the current note always shows
+    }
+    {
         std::vector<Node> kept;
         QHash<int, int> remap;
         for (int i = 0; i < int(nodes.size()); ++i) {
@@ -165,7 +267,7 @@ void GraphView::step()
                 d = QPointF(0.1 * (int(i % 3) - 1), 0.1);
                 distance2 = 0.02;
             }
-            const QPointF push = d * (repulsion / (distance2 * std::sqrt(distance2)));
+            const QPointF push = d * (repulsion * m_settings.repelForce / (distance2 * std::sqrt(distance2)));
             force[i] += push;
             force[j] -= push;
         }
@@ -173,7 +275,7 @@ void GraphView::step()
     for (const auto &[a, b] : m_edges) {
         const QPointF d = m_nodes[size_t(b)].position - m_nodes[size_t(a)].position;
         const qreal distance = std::max<qreal>(1, std::hypot(d.x(), d.y()));
-        const QPointF pull = d * (0.06 * (distance - linkDistance) / distance);
+        const QPointF pull = d * (0.06 * m_settings.linkForce * (distance - linkDistance * m_settings.linkDistance) / distance);
         force[size_t(a)] += pull;
         force[size_t(b)] -= pull;
     }
@@ -184,7 +286,7 @@ void GraphView::step()
             node.velocity = {};
             continue;
         }
-        force[i] -= node.position * gravity;
+        force[i] -= node.position * (gravity * m_settings.centerForce);
         node.velocity = (node.velocity + force[i] * m_alpha) * damping;
         const qreal speed = std::hypot(node.velocity.x(), node.velocity.y());
         if (speed > 30)
@@ -262,7 +364,22 @@ void GraphView::paintEvent(QPaintEvent *)
         if (m_hover >= 0 && !lit)
             color.setAlphaF(0.3f);
         painter.setPen(QPen(color, lit ? 1.6 : 1));
-        painter.drawLine(toScreen(m_nodes[size_t(a)].position), toScreen(m_nodes[size_t(b)].position));
+        const QPointF from = toScreen(m_nodes[size_t(a)].position);
+        const QPointF to = toScreen(m_nodes[size_t(b)].position);
+        painter.drawLine(from, to);
+        if (m_settings.arrows && m_zoom > 0.6) { // a head just outside the target's dot
+            const QPointF d = to - from;
+            const qreal length = std::hypot(d.x(), d.y());
+            if (length > 1) {
+                const QPointF unit = d / length;
+                const QPointF tip = to - unit * (radius(m_nodes[size_t(b)]) * std::clamp(m_zoom, 0.6, 2.0) + 1);
+                const QPointF side(-unit.y(), unit.x());
+                const qreal size = 6;
+                painter.setBrush(color);
+                painter.drawPolygon(QPolygonF{tip, tip - unit * size + side * size * 0.5, tip - unit * size - side * size * 0.5});
+                painter.setBrush(Qt::NoBrush);
+            }
+        }
     }
 
     QFont font = this->font();
@@ -274,6 +391,14 @@ void GraphView::paintEvent(QPaintEvent *)
         const QPointF center = toScreen(node.position);
         const bool current = node.path == m_current;
         QColor fill = current || i == m_hover ? accent : dot;
+        if (!current && i != m_hover) { // tags, attachments and notes not created yet look different
+            if (node.kind == Kind::Tag)
+                fill = EditorTheme::mix(dot, QColor(0x2e, 0xa0, 0x43), 0.7);
+            else if (node.kind == Kind::Attachment)
+                fill = EditorTheme::mix(dot, QColor(0xd6, 0x8a, 0x00), 0.7);
+            else if (node.kind == Kind::Missing)
+                fill = EditorTheme::mix(base, text, 0.25);
+        }
         if (!related(i))
             fill.setAlphaF(0.25f);
         painter.setPen(Qt::NoPen);
@@ -332,8 +457,13 @@ void GraphView::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_dragged >= 0) {
         m_nodes[size_t(m_dragged)].pinned = false;
-        if (!m_moved && event->button() == Qt::LeftButton)
-            emit noteActivated(m_nodes[size_t(m_dragged)].path);
+        const Node &node = m_nodes[size_t(m_dragged)];
+        if (!m_moved && event->button() == Qt::LeftButton) {
+            if (node.kind == Kind::Tag)
+                emit tagActivated(node.name.mid(1));
+            else if (node.kind != Kind::Missing)
+                emit noteActivated(node.path);
+        }
     }
     m_dragged = -1;
     m_panning = false;

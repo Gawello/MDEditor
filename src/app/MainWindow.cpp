@@ -59,6 +59,9 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSettings>
+#include <QLineEdit>
+#include <QSpinBox>
+#include <QSlider>
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -1870,7 +1873,7 @@ void MainWindow::showGraph()
     if (!m_graphWindow) {
         m_graphWindow = new QWidget(this, Qt::Window);
         m_graphWindow->setWindowTitle(tr("Graph"));
-        m_graphWindow->resize(760, 560);
+        m_graphWindow->resize(980, 620);
         m_graph = new GraphView(m_index, m_graphWindow);
         auto *local = new QCheckBox(tr("Current note and its links only"), m_graphWindow);
         auto *hint = new QLabel(tr("Drag to move · wheel to zoom · click a note to open it"), m_graphWindow);
@@ -1879,13 +1882,136 @@ void MainWindow::showGraph()
         bar->addWidget(local);
         bar->addStretch();
         bar->addWidget(hint);
+
+        // Obsidian's graph settings: filters, display, forces; kept between sessions.
+        QSettings stored;
+        GraphView::Settings settings;
+        settings.filter = stored.value(QStringLiteral("graph/filter")).toString();
+        settings.tags = stored.value(QStringLiteral("graph/tags"), false).toBool();
+        settings.attachments = stored.value(QStringLiteral("graph/attachments"), false).toBool();
+        settings.existingOnly = stored.value(QStringLiteral("graph/existingOnly"), true).toBool();
+        settings.orphans = stored.value(QStringLiteral("graph/orphans"), true).toBool();
+        settings.arrows = stored.value(QStringLiteral("graph/arrows"), false).toBool();
+        settings.depth = stored.value(QStringLiteral("graph/depth"), 1).toInt();
+        settings.centerForce = stored.value(QStringLiteral("graph/centerForce"), 1.0).toReal();
+        settings.repelForce = stored.value(QStringLiteral("graph/repelForce"), 1.0).toReal();
+        settings.linkForce = stored.value(QStringLiteral("graph/linkForce"), 1.0).toReal();
+        settings.linkDistance = stored.value(QStringLiteral("graph/linkDistance"), 1.0).toReal();
+        m_graph->setSettings(settings);
+
+        auto *panel = new QWidget(m_graphWindow);
+        panel->setFixedWidth(230);
+        auto *form = new QVBoxLayout(panel);
+        form->setContentsMargins(4, 0, 0, 0);
+        auto *filter = new QLineEdit(settings.filter, panel);
+        filter->setPlaceholderText(tr("Filter: words of the path, or tag:x"));
+        filter->setClearButtonEnabled(true);
+        form->addWidget(new QLabel(tr("<b>Filters</b>"), panel));
+        form->addWidget(filter);
+        const auto check = [&](const QString &text, bool on) {
+            auto *box = new QCheckBox(text, panel);
+            box->setChecked(on);
+            form->addWidget(box);
+            return box;
+        };
+        QCheckBox *tags = check(tr("Tags"), settings.tags);
+        QCheckBox *attachments = check(tr("Attachments"), settings.attachments);
+        QCheckBox *existing = check(tr("Existing files only"), settings.existingOnly);
+        QCheckBox *orphans = check(tr("Orphans"), settings.orphans);
+        auto *depthRow = new QHBoxLayout;
+        auto *depth = new QSpinBox(panel);
+        depth->setRange(1, 5);
+        depth->setValue(settings.depth);
+        depth->setEnabled(false);
+        depthRow->addWidget(new QLabel(tr("Depth (current note only)"), panel), 1);
+        depthRow->addWidget(depth);
+        form->addLayout(depthRow);
+        form->addSpacing(8);
+        form->addWidget(new QLabel(tr("<b>Display</b>"), panel));
+        QCheckBox *arrows = check(tr("Arrows"), settings.arrows);
+        form->addSpacing(8);
+        form->addWidget(new QLabel(tr("<b>Forces</b>"), panel));
+        const auto slider = [&](const QString &text, qreal value) {
+            form->addWidget(new QLabel(text, panel));
+            auto *s = new QSlider(Qt::Horizontal, panel);
+            s->setRange(10, 300); // 0.1× to 3×
+            s->setValue(int(std::round(value * 100)));
+            form->addWidget(s);
+            return s;
+        };
+        QSlider *center = slider(tr("Center force"), settings.centerForce);
+        QSlider *repel = slider(tr("Repel force"), settings.repelForce);
+        QSlider *linkForce = slider(tr("Link force"), settings.linkForce);
+        QSlider *distance = slider(tr("Link distance"), settings.linkDistance);
+        auto *defaults = new QPushButton(tr("Restore Defaults"), panel);
+        form->addWidget(defaults);
+        form->addStretch();
+
+        const auto apply = [this, filter, tags, attachments, existing, orphans, depth, arrows, center, repel, linkForce,
+                            distance] {
+            GraphView::Settings now;
+            now.filter = filter->text();
+            now.tags = tags->isChecked();
+            now.attachments = attachments->isChecked();
+            now.existingOnly = existing->isChecked();
+            now.orphans = orphans->isChecked();
+            now.depth = depth->value();
+            now.arrows = arrows->isChecked();
+            now.centerForce = center->value() / 100.0;
+            now.repelForce = repel->value() / 100.0;
+            now.linkForce = linkForce->value() / 100.0;
+            now.linkDistance = distance->value() / 100.0;
+            m_graph->setSettings(now);
+            QSettings store;
+            store.setValue(QStringLiteral("graph/filter"), now.filter);
+            store.setValue(QStringLiteral("graph/tags"), now.tags);
+            store.setValue(QStringLiteral("graph/attachments"), now.attachments);
+            store.setValue(QStringLiteral("graph/existingOnly"), now.existingOnly);
+            store.setValue(QStringLiteral("graph/orphans"), now.orphans);
+            store.setValue(QStringLiteral("graph/depth"), now.depth);
+            store.setValue(QStringLiteral("graph/arrows"), now.arrows);
+            store.setValue(QStringLiteral("graph/centerForce"), now.centerForce);
+            store.setValue(QStringLiteral("graph/repelForce"), now.repelForce);
+            store.setValue(QStringLiteral("graph/linkForce"), now.linkForce);
+            store.setValue(QStringLiteral("graph/linkDistance"), now.linkDistance);
+        };
+        connect(filter, &QLineEdit::textChanged, m_graph, apply);
+        for (QCheckBox *box : {tags, attachments, existing, orphans, arrows})
+            connect(box, &QCheckBox::toggled, m_graph, apply);
+        connect(depth, &QSpinBox::valueChanged, m_graph, apply);
+        for (QSlider *s : {center, repel, linkForce, distance})
+            connect(s, &QSlider::valueChanged, m_graph, apply);
+        connect(defaults, &QPushButton::clicked, m_graph, [=] {
+            const GraphView::Settings plain;
+            filter->clear();
+            tags->setChecked(plain.tags);
+            attachments->setChecked(plain.attachments);
+            existing->setChecked(plain.existingOnly);
+            orphans->setChecked(plain.orphans);
+            arrows->setChecked(plain.arrows);
+            depth->setValue(plain.depth);
+            for (QSlider *s : {center, repel, linkForce, distance})
+                s->setValue(100);
+        });
+        connect(local, &QCheckBox::toggled, depth, &QWidget::setEnabled);
+
+        auto *content = new QHBoxLayout;
+        content->addWidget(m_graph, 1);
+        content->addWidget(panel);
         auto *layout = new QVBoxLayout(m_graphWindow);
         layout->setContentsMargins(6, 6, 6, 6);
         layout->addLayout(bar);
-        layout->addWidget(m_graph, 1);
+        layout->addLayout(content, 1);
         connect(local, &QCheckBox::toggled, m_graph, &GraphView::setLocal);
         connect(m_graph, &GraphView::noteActivated, this, [this](const QString &path) {
             openFile(path);
+            activateWindow();
+            raise();
+        });
+        connect(m_graph, &GraphView::tagActivated, this, [this](const QString &tag) {
+            m_sideBar->show();
+            m_sideBar->showPage(m_search);
+            m_search->showTag(tag);
             activateWindow();
             raise();
         });

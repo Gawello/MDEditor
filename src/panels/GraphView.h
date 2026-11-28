@@ -18,9 +18,31 @@ class GraphView : public QWidget {
 public:
     explicit GraphView(NoteIndex *index, QWidget *parent = nullptr);
 
+    // Obsidian's graph settings: Filters, Display and Forces.
+    struct Settings {
+        QString filter;           // notes whose path holds it (words), or "tag:x"
+        bool tags = false;        // tags as nodes, linked to their notes
+        bool attachments = false; // linked files that aren't notes
+        bool existingOnly = true; // links to notes not created yet are left out
+        bool orphans = true;      // notes without links
+        bool arrows = false;      // the direction of links
+        int depth = 1;            // local graph: links away from the current note
+        qreal centerForce = 1;    // multipliers of the simulation's forces
+        qreal repelForce = 1;
+        qreal linkForce = 1;
+        qreal linkDistance = 1;
+        bool operator==(const Settings &) const = default;
+    };
+    void setSettings(const Settings &settings);
+    const Settings &settings() const { return m_settings; }
+
     void setCurrent(const QString &path);
     void setLocal(bool local);
     void rebuild();
+    // What a node is, for tests and colors.
+    enum class Kind { Note, Tag, Attachment, Missing };
+    QStringList nodeNames() const;
+    Kind kindOf(const QString &name) const;
 
     int nodeCount() const { return int(m_nodes.size()); }
     int edgeCount() const { return int(m_edges.size()); }
@@ -29,6 +51,7 @@ public:
 
 signals:
     void noteActivated(const QString &path);
+    void tagActivated(const QString &tag); // a tag's node (Settings: tags)
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -46,6 +69,7 @@ private:
         QPointF velocity;
         int degree = 0;
         bool pinned = false; // being dragged
+        Kind kind = Kind::Note;
     };
     qreal radius(const Node &node) const;
     QPointF toScreen(const QPointF &p) const;
@@ -56,6 +80,7 @@ private:
     NoteIndex *m_index;
     QString m_current;
     bool m_local = false;
+    Settings m_settings;
     std::vector<Node> m_nodes;
     std::vector<std::pair<int, int>> m_edges;
     std::vector<std::vector<int>> m_neighbors;

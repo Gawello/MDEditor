@@ -96,8 +96,8 @@ any text file can be edited, not just Markdown.
 | Outgoing links pane | ✅ | Existing and not-yet-created notes | | |
 | Page preview on hover (Ctrl+hover on a link) | ✅ | In the editor; not yet in panels | | |
 | Graph view | ✅ | Force layout, drag, zoom, open by click | | |
-| Local graph with depth | 🟡 | Depth 1 only | P2 | S |
-| Graph filters (tags, attachments, orphans, existing files), groups with colors, forces settings, arrows | ❌ | | P2 | M |
+| Local graph with depth | ✅ | 1–5 | | |
+| Graph filters (tags, attachments, orphans, existing files), groups with colors, forces settings, arrows | 🟡 | All but color groups and text fade/node size | P3 | S |
 | Graph timelapse animation | ❌ | | P3 | S |
 | Tags `#tag`, nested `#a/b` | ✅ | Pills in the text, Tags pane with counts | | |
 | Tag autocomplete | ✅ | Most used first | | |

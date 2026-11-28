@@ -130,11 +130,11 @@ The menu is built from groups; which groups appear depends on what's under the m
 
 | Group | Controls | MDEditor |
 |---|---|---|
-| Filters | Search files, Tags, Attachments, Existing files only, Orphans | ❌ |
+| Filters | Search files, Tags, Attachments, Existing files only, Orphans | ✅ (path words or tag:) |
 | Groups | Query + color, any number | ❌ |
-| Display | Arrows, Text fade threshold, Node size, Link thickness, Animate (timelapse) | ❌ |
-| Forces | Center force, Repel force, Link force, Link distance | ❌ (fixed values) |
-| Other | Restore default settings; ⋮ Split right/down, Copy screenshot, Bookmark; local graph with depth and the same controls | 🟡 local graph, depth 1 |
+| Display | Arrows, Text fade threshold, Node size, Link thickness, Animate (timelapse) | 🟡 arrows |
+| Forces | Center force, Repel force, Link force, Link distance | ✅ |
+| Other | Restore default settings; ⋮ Split right/down, Copy screenshot, Bookmark; local graph with depth and the same controls | 🟡 restore defaults, local graph with depth |
 
 ## 7. Canvas and Bases
 

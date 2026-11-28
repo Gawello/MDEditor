@@ -97,7 +97,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Daily notes (File → Open Today's Note, Ctrl+Shift+D) and templates (Format → Insert → Template…) with
   `{{title}}`, `{{date}}`, `{{time}}` and `{{date:dddd, D MMMM}}`; folders and date format in Settings → Notes
 - Graph view (View → Graph View, Ctrl+G): notes and their links, laid out by a force simulation; drag, zoom, click to
-  open, or only the current note and its neighbors
+  open, or only the current note and its neighbors (to a chosen depth). Settings beside it: a filter (path words or
+  `tag:x`), tags, attachments and not-yet-created notes as nodes, orphans, arrows, and the four forces
 - Word and character count in the status bar (of the selection, if any)
 - Tabs (Ctrl+N new, Ctrl+W or middle click to close, Ctrl+Tab to switch); open tabs are restored on the next start
 - File → Open Recent with the last 10 files
