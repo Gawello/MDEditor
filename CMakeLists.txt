@@ -22,6 +22,7 @@ add_library(mdcore STATIC
     src/markdown/InlineParser.cpp
     src/markdown/LineStyle.cpp
     src/markdown/NoteScan.cpp
+    src/markdown/Completion.cpp
     src/markdown/TableEdit.cpp
     src/markdown/TableParser.cpp
     src/syntax/Syntax.cpp
@@ -48,6 +49,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
         src/app/NavigationHistory.cpp src/app/NavigationHistory.h
+        src/notes/Completions.cpp src/notes/Completions.h
         src/app/PaletteDialog.cpp src/app/PaletteDialog.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/SymbolPicker.cpp src/app/SymbolPicker.h
@@ -59,6 +61,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/Updates.cpp src/app/Updates.h
         src/document/Document.cpp src/document/Document.h
         src/document/Encodings.cpp src/document/Encodings.h
+        src/editor/CompletionPopup.cpp src/editor/CompletionPopup.h
         src/editor/CodeHighlighter.cpp src/editor/CodeHighlighter.h
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h

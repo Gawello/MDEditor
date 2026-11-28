@@ -107,6 +107,27 @@ std::vector<BlockInfo> parseBlocks(const std::vector<std::u16string_view> &lines
     return blocks;
 }
 
+namespace {
+
+// "text ^id" / "^id": the id is letters, digits and '-' after " ^" at the very end.
+bool blockId(std::u16string_view content, BlockId &block)
+{
+    content = trim(content);
+    size_t caret = content.rfind(u'^');
+    if (caret == std::u16string_view::npos || caret + 1 == content.size() || (caret > 0 && !isSpace(content[caret - 1])))
+        return false;
+    for (size_t i = caret + 1; i < content.size(); ++i) {
+        const char16_t c = content[i];
+        if (!((c >= u'a' && c <= u'z') || (c >= u'A' && c <= u'Z') || (c >= u'0' && c <= u'9') || c == u'-'))
+            return false;
+    }
+    block.id = std::u16string(content.substr(caret + 1));
+    block.text = std::u16string(trim(content.substr(0, caret)));
+    return true;
+}
+
+} // namespace
+
 NoteScan scanNote(std::u16string_view text)
 {
     NoteScan scan;
@@ -165,6 +186,19 @@ NoteScan scanNote(std::u16string_view text)
             continue;
 
         const std::u16string_view content = line.substr(std::min<size_t>(info.contentStart, line.size()));
+        if (BlockId block; blockId(content, block)) {
+            block.line = number;
+            if (block.text.empty()) { // "^id" alone names the block above it
+                int above = number - 1;
+                while (above > 0 && trim(lines[above]).empty())
+                    --above;
+                if (above >= 0) {
+                    block.line = above;
+                    block.text = std::u16string(trim(lines[above]));
+                }
+            }
+            scan.blocks.push_back(std::move(block));
+        }
         const InlineResult parsed = parseInline(content);
         if (info.type == BlockType::Heading)
             scan.headings.push_back({number, info.headingLevel, std::u16string(trim(stripInlineFormatting(trim(content))))});

@@ -39,6 +39,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   the current file), Ctrl+Alt+click or Ctrl+Alt+Enter in the other pane. `[[Note#Heading]]`, `[[Note#^block]]`,
   `[[#Heading]]` and `[x](Note.md#heading-slug)` scroll to the heading or block; `[[Note]]` also finds a note by
   its `aliases:`; following a link to a note that doesn't exist creates it next to the current note
+- Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,
+  `[[Note#^` its block ids, `#ta` the tags in use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`

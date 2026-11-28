@@ -16,6 +16,7 @@
 #include "document/Encodings.h"
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
+#include "notes/Completions.h"
 #include "notes/NoteIndex.h"
 #include "notes/Templates.h"
 #include "panels/FolderPanel.h"
@@ -152,6 +153,10 @@ MainWindow::MainWindow(QWidget *parent)
     MarkdownEditor::setLinkResolver([index = QPointer<NoteIndex>(m_index)](const QString &target, bool wiki,
                                                                           const QString &from) {
         return index ? index->resolve(target, wiki, from) : QString();
+    });
+    MarkdownEditor::setCompletionProvider([index = QPointer<NoteIndex>(m_index)](const md::CompletionContext &context,
+                                                                                const QString &from, const QString &text) {
+        return index ? Completions::suggest(*index, context, from, text) : QList<CompletionItem>();
     });
 
     m_splitter->addWidget(m_folderPanel);

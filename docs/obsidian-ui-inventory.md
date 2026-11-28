@@ -63,12 +63,12 @@ The menu is built from groups; which groups appear depends on what's under the m
 
 | Trigger | What it offers | MDEditor |
 |---|---|---|
-| `[[` | Every note and file (aliases shown as "Start → Home", folders after the name), unresolved links; footer hints: `#` heading, `^` block, `\|` display text | ❌ |
-| `[[Note#` | Headings of that note with their level (H1, H2…) | ❌ |
-| `[[Note^` | Blocks (paragraphs, list items) of that note; picking one adds a `^id` | ❌ |
+| `[[` | Every note and file (aliases shown as "Start → Home", folders after the name), unresolved links; footer hints: `#` heading, `^` block, `\|` display text | 🟡 no unresolved links, no hints |
+| `[[Note#` | Headings of that note with their level (H1, H2…) | ✅ |
+| `[[Note^` | Blocks (paragraphs, list items) of that note; picking one adds a `^id` | 🟡 `[[Note#^`: blocks that have an id |
 | `[[^^` | Blocks of all notes | ❌ |
 | `[[Note\|` | Display text suggestion | ❌ |
-| `#` | Existing tags | ❌ |
+| `#` | Existing tags | ✅ |
 | `/` (Slash commands) | Every command, filtered as you type, with shortcuts | ❌ |
 | Ctrl+hover on a link | Page preview: the note rendered in a popover, scrollable, editable | ❌ |
 

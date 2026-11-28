@@ -27,6 +27,8 @@
 #include <QPainterPath>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
+#include <QScrollBar>
 #include <QTextBlock>
 #include <QAbstractTextDocumentLayout>
 #include <QTextDocument>
@@ -83,6 +85,21 @@ void MarkdownEditor::setLinkResolver(LinkResolver resolver)
     linkResolver() = std::move(resolver);
 }
 
+namespace {
+
+MarkdownEditor::CompletionProvider &completionProvider()
+{
+    static MarkdownEditor::CompletionProvider provider;
+    return provider;
+}
+
+} // namespace
+
+void MarkdownEditor::setCompletionProvider(CompletionProvider provider)
+{
+    completionProvider() = std::move(provider);
+}
+
 MarkdownEditor::MarkdownEditor(QWidget *parent)
     : QPlainTextEdit(parent)
 {
@@ -125,6 +142,12 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     });
 
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
+    // The list follows the cursor while it's open (Backspace, arrows) and goes once it leaves the link or tag.
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
+        if (m_completion && m_completion->isVisible())
+            updateCompletion(false);
+    });
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &MarkdownEditor::hideCompletion);
 
     // Folds follow edits (a heading typed above a folded one changes its section) once the edit is done.
     m_foldTimer = new QTimer(this);
@@ -312,6 +335,40 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
     const auto modifiers = event->modifiers() & ~Qt::KeypadModifier;
     const int key = event->key();
 
+    if (m_completion && m_completion->isVisible() && (modifiers == Qt::NoModifier || modifiers == Qt::ShiftModifier)) {
+        switch (key) {
+        case Qt::Key_Down:
+            m_completion->move(1);
+            return;
+        case Qt::Key_Up:
+            m_completion->move(-1);
+            return;
+        case Qt::Key_PageDown:
+            m_completion->move(10);
+            return;
+        case Qt::Key_PageUp:
+            m_completion->move(-10);
+            return;
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+        case Qt::Key_Tab:
+            acceptCompletion(m_completion->currentRow());
+            return;
+        case Qt::Key_Escape:
+            m_completionDismissed = m_completionStart;
+            hideCompletion();
+            return;
+        default:
+            break;
+        }
+    }
+    // Typing (or deleting) may start, narrow or end a list of suggestions.
+    const bool typed = !event->text().isEmpty() || key == Qt::Key_Backspace || key == Qt::Key_Delete;
+    const auto suggest = qScopeGuard([this, typed] {
+        if (typed)
+            updateCompletion(true);
+    });
+
     if (m_markdown) {
         if ((key == Qt::Key_Return || key == Qt::Key_Enter) && modifiers == Qt::NoModifier
             && (tableEnter() || continueList()))
@@ -333,6 +390,87 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
     }
 
     QPlainTextEdit::keyPressEvent(event);
+}
+
+void MarkdownEditor::focusOutEvent(QFocusEvent *event)
+{
+    hideCompletion();
+    QPlainTextEdit::focusOutEvent(event);
+}
+
+void MarkdownEditor::hideCompletion()
+{
+    if (m_completion)
+        m_completion->hide();
+}
+
+void MarkdownEditor::updateCompletion(bool mayOpen)
+{
+    const CompletionProvider &provider = completionProvider();
+    const QTextCursor cursor = textCursor();
+    const QTextBlock block = cursor.block();
+    const BlockType type = blockType(block);
+    if (!m_markdown || !provider || isReadOnly() || cursor.hasSelection() || isCode(type)
+        || md::isFrontmatterType(type) || md::isMathType(type)) {
+        hideCompletion();
+        return;
+    }
+    const md::CompletionContext context = md::completionAt(toView(block.text()), cursor.positionInBlock());
+    const int start = block.position() + context.start;
+    if (context.kind == md::CompletionKind::None || start == m_completionDismissed) {
+        hideCompletion();
+        return;
+    }
+    if (!mayOpen && !(m_completion && m_completion->isVisible()))
+        return;
+    m_completionDismissed = -1;
+    const bool ownText = (context.kind == md::CompletionKind::Heading || context.kind == md::CompletionKind::Block)
+                         && context.note.empty();
+    const QList<CompletionItem> items = provider(context, m_documentPath, ownText ? document()->toPlainText() : QString());
+    if (items.isEmpty()) {
+        hideCompletion();
+        return;
+    }
+    if (!m_completion) {
+        m_completion = new CompletionPopup(this);
+        connect(m_completion, &CompletionPopup::activated, this, &MarkdownEditor::acceptCompletion);
+    }
+    m_completionContext = context;
+    m_completionStart = start;
+    m_completion->setItems(items);
+    QTextCursor at(document());
+    at.setPosition(start);
+    const QRect rect = cursorRect(at);
+    m_completion->showAt(viewport()->mapToGlobal(rect.bottomLeft() + QPoint(0, 2)),
+                         viewport()->mapToGlobal(rect.topLeft()).y() - 2);
+}
+
+void MarkdownEditor::acceptCompletion(int row)
+{
+    if (!m_completion || row < 0 || row >= m_completion->items().size()) {
+        hideCompletion();
+        return;
+    }
+    const CompletionItem item = m_completion->items().at(row);
+    hideCompletion();
+    QTextCursor cursor = textCursor();
+    const int end = cursor.position();
+    if (m_completionStart < 0 || m_completionStart > end || cursor.block() != document()->findBlock(m_completionStart))
+        return;
+    cursor.beginEditBlock();
+    cursor.setPosition(m_completionStart);
+    cursor.setPosition(end, QTextCursor::KeepAnchor);
+    cursor.insertText(item.insert);
+    if (m_completionContext.kind != md::CompletionKind::Tag) {
+        // Past the closing brackets, adding them if they aren't there yet.
+        if (m_completionContext.closed)
+            cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 2);
+        else
+            cursor.insertText(QStringLiteral("]]"));
+    }
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+    m_completionStart = -1;
 }
 
 void MarkdownEditor::mousePressEvent(QMouseEvent *event)

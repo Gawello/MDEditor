@@ -1,8 +1,10 @@
 #pragma once
 
+#include "editor/CompletionPopup.h"
 #include "editor/EditorTheme.h"
 #include "editor/MathRenderer.h"
 #include "markdown/BlockParser.h"
+#include "markdown/Completion.h"
 #include "markdown/LineStyle.h"
 #include "markdown/TableParser.h"
 
@@ -107,6 +109,12 @@ public:
     // are relative to the note.
     using LinkResolver = std::function<QString(const QString &target, bool wiki, const QString &from)>;
     static void setLinkResolver(LinkResolver resolver);
+    // Suggestions while typing [[links]] and #tags (the main window gives them from the open folder). `text` is
+    // this note's text, given only for its own headings and blocks.
+    using CompletionProvider =
+        std::function<QList<CompletionItem>(const md::CompletionContext &context, const QString &from, const QString &text)>;
+    static void setCompletionProvider(CompletionProvider provider);
+    CompletionPopup *completionPopup() const { return m_completion; } // null until first needed
 
 signals:
     // A link to a note or text file was followed: `path` (absolute; it may not exist yet, then the note is to be
@@ -126,6 +134,7 @@ signals:
 protected:
     bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -231,6 +240,14 @@ private:
     CodeHighlighter *m_codeHighlighter = nullptr; // plain-text mode, files of a known language
     QString m_baseDirectory;
     QString m_documentPath; // empty for an unsaved document
+    // Suggestions: the popup, where the typed query starts (document position) and what is being typed.
+    void updateCompletion(bool mayOpen);
+    void acceptCompletion(int row);
+    void hideCompletion();
+    CompletionPopup *m_completion = nullptr;
+    md::CompletionContext m_completionContext;
+    int m_completionStart = -1;
+    int m_completionDismissed = -1; // Escape: no list again for the query starting here
     bool m_applyingTheme = false;
     bool m_markdown = true;
     mutable QHash<QString, CachedImage> m_images; // by absolute path

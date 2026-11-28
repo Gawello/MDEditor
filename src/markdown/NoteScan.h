@@ -24,6 +24,13 @@ struct NoteLink {
     bool embed = false; // ![[...]] or ![...](...)
 };
 
+// A block with an id: "text ^id" at the end of a line, or "^id" alone on the line after a table or list.
+struct BlockId {
+    std::u16string id;   // without '^'
+    std::u16string text; // the line it names, without the id
+    int line = 0;
+};
+
 struct Property {
     std::u16string key;
     std::u16string value; // a list joined with ", "
@@ -35,6 +42,7 @@ struct NoteScan {
     std::vector<std::u16string> tags; // without '#', each once, in order of appearance
     std::vector<NoteLink> links;      // local targets only, not URLs
     std::vector<Property> properties; // frontmatter
+    std::vector<BlockId> blocks;
     int frontmatterEnd = -1;          // line of the closing "---", -1 without frontmatter
 };
 

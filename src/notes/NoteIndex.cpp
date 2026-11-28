@@ -30,6 +30,7 @@ void NoteIndex::setRoot(const QString &root)
     m_notes.clear();
     m_byName.clear();
     m_byAlias.clear();
+    m_entries.clear();
     emit changed();
     refresh();
 }
@@ -103,6 +104,7 @@ void NoteIndex::finished()
             m_byName[name.toLower()] << path;
         }
         indexAliases();
+        indexEntries();
         emit changed();
     }
     if (m_again) {
@@ -125,6 +127,7 @@ void NoteIndex::update(const QString &path, const QString &text)
         m_files << clean;
         m_files.sort(Qt::CaseInsensitive);
         m_byName[QFileInfo(clean).completeBaseName().toLower()] << clean;
+        indexEntries();
     }
     indexAliases();
     emit changed();
@@ -189,6 +192,19 @@ QString NoteIndex::resolve(const QString &target, bool wiki, const QString &from
                              [&](const QString &a, const QString &b) { return distance(a) < distance(b); });
 }
 
+QString NoteIndex::linkText(const QString &path) const
+{
+    const QFileInfo info(path);
+    const bool note = MarkdownEditor::isMarkdownFile(path);
+    const QString name = note ? info.completeBaseName() : info.fileName();
+    if (m_byName.value(name.toLower()).size() <= 1 || m_root.isEmpty())
+        return name;
+    QString relative = QDir(m_root).relativeFilePath(path);
+    if (note)
+        relative.chop(info.suffix().size() + 1);
+    return relative;
+}
+
 QStringList NoteIndex::aliasesIn(const md::NoteScan &scan)
 {
     QStringList result;
@@ -212,6 +228,25 @@ QStringList NoteIndex::aliases(const QString &path) const
 {
     const auto note = m_notes.value(QDir::cleanPath(path));
     return note ? aliasesIn(note->scan) : QStringList();
+}
+
+void NoteIndex::indexEntries()
+{
+    m_entries.clear();
+    m_entries.reserve(m_files.size());
+    const QString prefix = m_root + u'/';
+    for (const QString &path : std::as_const(m_files)) {
+        FileEntry entry;
+        entry.path = path;
+        entry.note = MarkdownEditor::isMarkdownFile(path);
+        const qsizetype slash = path.lastIndexOf(u'/');
+        entry.name = path.mid(slash + 1);
+        if (entry.note)
+            entry.name.truncate(entry.name.lastIndexOf(u'.'));
+        if (path.startsWith(prefix) && slash > prefix.size())
+            entry.folder = path.mid(prefix.size(), slash - prefix.size());
+        m_entries << entry;
+    }
 }
 
 void NoteIndex::indexAliases()

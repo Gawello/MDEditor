@@ -126,7 +126,8 @@ docs/                   plugins.md (plugin API), themes.md (theme JSON), obsidia
                         roadmap: update its status column when a feature lands), obsidian-ui-inventory.md (every
                         Obsidian menu, panel, command and setting, entry by entry, with how it was gathered);
                         examples/plugins/ = sample plugins
-src/markdown/NoteScan   Qt-free: a note's headings, tags (inline + frontmatter), links, properties; parseBlocks, foldEnd
+src/markdown/NoteScan   Qt-free: a note's headings, tags (inline + frontmatter), links, properties, ^block ids; parseBlocks,
+                        foldEnd. Completion: what's being typed ([[note, [[note#heading, #tag)
 src/notes/NoteIndex     every file under the open folder + NoteScan of each note, built off the GUI thread, refreshed
                         on activation (re-reads changed files only); resolve() for [[links]]; tagCounts()
 src/notes/Templates     moment.js-style dates, {{title}}/{{date}}/{{time}} expansion, daily note paths
@@ -178,6 +179,11 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   `MainWindow::followLink` creates a missing note, opens it (or `openToTheRight`), and scrolls to
   `NoteIndex::findAnchor` (headings by text or slug, `^block` ids) with `scrollToLine`. Aliases live in
   `NoteIndex::m_byAlias` and are tried after file names.
+- Suggestions: `md::completionAt` (Qt-free) says what's being typed at the cursor; `Completions::suggest` ranks
+  index entries (`NoteIndex::entries()`: name and folder worked out once per scan; it runs on every key, ~30 ms for
+  20k notes in a debug build); `CompletionPopup` is a `Qt::ToolTip` window that never takes the focus, the editor
+  forwards ↑↓/Enter/Tab/Esc to it (`keyPressEvent`) and re-evaluates after each typed key and cursor move.
+  `MarkdownEditor::setCompletionProvider` is static, like the link resolver.
 - `NoteIndex` follows `FolderPanel::rootChanged`; `MainWindow::saveTo` passes the saved text to `update()`.
   `MarkdownEditor::setLinkResolver` (static) makes [[links]], Ctrl+click and embeds resolve through the index.
 - Inline: `#tag` (`md::Tag`, after whitespace, not only digits, locked so `_` isn't emphasis) and `[^label]`

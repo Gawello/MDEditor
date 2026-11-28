@@ -37,11 +37,22 @@ public:
 
     const Notes &notes() const { return m_notes; }
     const QStringList &files() const { return m_files; } // every file under the root, sorted
+    // The same files with what lists show of them, worked out once (suggestions run on every key).
+    struct FileEntry {
+        QString path;
+        QString name;   // "Note" for notes, "pic.png" for other files
+        QString folder; // relative to the root, empty at the top
+        bool note = false;
+    };
+    const QList<FileEntry> &entries() const { return m_entries; }
     QStringList noteNames() const;
 
     // The file a link points to, from the note `from`: [[Note]] by name anywhere in the folder (nearest first),
     // [[folder/Note]] and [text](relative/path.md) by path. Empty if it doesn't exist.
     QString resolve(const QString &target, bool wiki, const QString &from) const;
+    // How a [[link]] names `path`: the bare name when no other file has it ("Note", "pic.png"), else the path
+    // from the open folder ("sub/Note"); Markdown notes without ".md".
+    QString linkText(const QString &path) const;
     // The `aliases:` of a note (also `alias:`), as written.
     QStringList aliases(const QString &path) const;
     static QStringList aliasesIn(const md::NoteScan &scan);
@@ -72,6 +83,8 @@ private:
     Notes m_notes;
     QHash<QString, QStringList> m_byName; // lower-case base name (no .md) -> paths
     QHash<QString, QStringList> m_byAlias; // lower-case alias -> paths
+    QList<FileEntry> m_entries;
+    void indexEntries();
     QFutureWatcher<Result> m_watcher;
     bool m_again = false;
 };

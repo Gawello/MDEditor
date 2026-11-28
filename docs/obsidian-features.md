@@ -82,7 +82,7 @@ any text file can be edited, not just Markdown.
 | Obsidian | MDEditor | Notes | Prio | Effort |
 |---|---|---|---|---|
 | `[[Wiki links]]` and `[text](path.md)`, Ctrl+click opens | ✅ | Resolved anywhere in the open folder | | |
-| Link autocomplete while typing `[[` | ❌ | Notes, then `#` headings and `^` blocks | P1 | M |
+| Link autocomplete while typing `[[` | ✅ | Notes, aliases, files, `#` headings, `#^` block ids | | |
 | Links to headings `[[Note#Heading]]` | ✅ | Also `#^block`, `[[#Heading]]`, slugs in Markdown links | | |
 | Block references `^id` and `[[Note#^id]]` | ❌ | | P2 | M |
 | Aliases (`[[Note\|alias]]`, `aliases:` property) | ✅ | Links and the quick switcher find notes by alias | | |
@@ -100,7 +100,7 @@ any text file can be edited, not just Markdown.
 | Graph filters (tags, attachments, orphans, existing files), groups with colors, forces settings, arrows | ❌ | | P2 | M |
 | Graph timelapse animation | ❌ | | P3 | S |
 | Tags `#tag`, nested `#a/b` | ✅ | Pills in the text, Tags pane with counts | | |
-| Tag autocomplete | ❌ | | P2 | S |
+| Tag autocomplete | ✅ | Most used first | | |
 | Rename a tag everywhere | ❌ | | P3 | M |
 
 ## 4. Properties (frontmatter)
