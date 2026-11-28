@@ -225,7 +225,7 @@ out.
 | Note composer | Extract this heading…, Extract current selection…, Merge current file with another file… | ❌ |
 | Unique note creator | Create new unique note, Add unique internal link | ❌ |
 | Random note | Open random note | ❌ |
-| File recovery | Open local history | ❌ |
+| File recovery | Open local history | ✅ File → Version History |
 | Workspaces | Save layout, Load workspace layout, Manage, Save and load another | ❌ |
 | Canvas | Create new canvas, Convert to file…, Export as image, Jump to group | ❌ |
 | Bases | Create new base, Insert new base, Add item, Add view, Switch view…, Copy table to clipboard | ❌ |
@@ -303,7 +303,7 @@ reset to default. MDEditor ❌.
 | Templates | Folder, Date format, Time format | 🟡 folder |
 | Note composer | Text after extraction (link / embed / none), Template, Confirm merge | ❌ |
 | Command palette | Pinned commands | ❌ |
-| File recovery | Snapshot interval (min), History length (days), View snapshots, Clear history | ❌ |
+| File recovery | Snapshot interval (min), History length (days), View snapshots, Clear history | 🟡 no Clear history |
 | Unique note creator | Folder, Template, Prefix format | ❌ |
 | Canvas | New file location, Mouse wheel (pan/zoom), Ctrl+drag action, Show card names, Snap to grid/objects, Zoom threshold | ❌ |
 | Web viewer | Open external links inside, Homepage, Saved page folder, Search engine, Ad blocker and lists | ❌ |

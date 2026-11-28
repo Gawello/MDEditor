@@ -54,6 +54,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/NavigationHistory.cpp src/app/NavigationHistory.h
         src/notes/Completions.cpp src/notes/Completions.h
         src/notes/NoteEdits.cpp src/notes/NoteEdits.h
+        src/notes/Snapshots.cpp src/notes/Snapshots.h
         src/app/PaletteDialog.cpp src/app/PaletteDialog.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/SymbolPicker.cpp src/app/SymbolPicker.h
@@ -61,6 +62,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/TabCloseButton.cpp src/app/TabCloseButton.h
         src/app/TablePicker.cpp src/app/TablePicker.h
         src/app/UpdateController.cpp src/app/UpdateController.h
+        src/app/VersionHistoryDialog.cpp src/app/VersionHistoryDialog.h
         src/app/Updater.cpp src/app/Updater.h
         src/app/Updates.cpp src/app/Updates.h
         src/document/Document.cpp src/document/Document.h

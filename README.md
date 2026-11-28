@@ -49,6 +49,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Images: drag an image's right edge to resize it (the width goes into the link, `![[pic.png|300]]`); right-click
   it to open, copy, reveal, reset its size, remove the link or delete the file
 - The note's name is shown as a title above it; editing it renames the file (links follow)
+- Version history (File → Version History): a copy of each note is kept when it's opened and when it's saved (at
+  most every 5 minutes, for 7 days; Settings → Notes), and any of them can be brought back
 - File → Export to PDF (A4) or HTML: the note rendered without its front matter, with embedded notes' text, callout
   titles, and images fitted to the page (width hints kept)
 - Line numbers (View → Line Numbers, or Settings → Editor), next to the text column

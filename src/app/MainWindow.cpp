@@ -5,6 +5,7 @@
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
 #include "app/Export.h"
+#include "app/VersionHistoryDialog.h"
 #include "app/FileActions.h"
 #include "app/FindBar.h"
 #include "app/RecentFiles.h"
@@ -22,6 +23,7 @@
 #include "markdown/LineStyle.h"
 #include "markdown/LinkRewrite.h"
 #include "notes/NoteEdits.h"
+#include "notes/Snapshots.h"
 #include "notes/NoteIndex.h"
 #include "notes/Templates.h"
 #include "panels/FolderPanel.h"
@@ -243,6 +245,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     createMenus();
     qApp->installEventFilter(new SideButtonFilter(this, [this](bool forward) { showPlace(forward); }));
+    // Version history: copies older than the setting go (in the background, it's a folder walk).
+    runInBackground([days = AppSettings::instance().snapshotDays()] {
+        Snapshots::prune(days);
+        return true;
+    });
     statusBar()->setSizeGripEnabled(false);
     m_encodingButton = new QToolButton(this);
     m_encodingButton->setAutoRaise(true);
@@ -311,6 +318,9 @@ void MainWindow::createMenus()
     file->addAction(tr("Save &As…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), this,
                     [this] { saveAs(currentTab()); });
     file->addSeparator();
+    file->addAction(tr("Version Histor&y…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { showVersionHistory(currentTab()); }, Qt::QueuedConnection);
+    });
     QAction *exportPdf = file->addAction(tr("&Export to PDF…"), this, [this] {
         QMetaObject::invokeMethod(this, [this] { exportNote(true); }, Qt::QueuedConnection);
     });
@@ -928,6 +938,7 @@ bool MainWindow::openFile(const QString &path)
 
     activate(tab);
     noteShown(); // a reused empty tab changes its file without a tab change
+    recordSnapshot(tab, true); // as it was found, before any edit
     RecentFiles::add(absolute);
     if (m_folderPanel->rootPath().isEmpty())
         openFolder(QFileInfo(absolute).absolutePath());
@@ -1370,6 +1381,7 @@ bool MainWindow::saveTo(EditorTab *tab, const QString &path, bool overwrite)
     RecentFiles::add(tab->filePath());
     m_index->update(tab->filePath(), tab->editor()->markdown());
     m_folderPanel->selectFile(tab->filePath());
+    recordSnapshot(tab, false);
     return true;
 }
 
@@ -1912,6 +1924,38 @@ void MainWindow::insertTemplate(MarkdownEditor *editor)
     }
     dialog.setItems(items);
     dialog.choose();
+}
+
+void MainWindow::recordSnapshot(EditorTab *tab, bool force)
+{
+    const AppSettings &settings = AppSettings::instance();
+    if (!tab || tab->isUntitled() || !settings.snapshots() || !MarkdownEditor::isMarkdownFile(tab->filePath()))
+        return;
+    // Fire and forget: the app's own data folder, a small file.
+    runInBackground([path = tab->filePath(), text = tab->editor()->markdown(), minutes = settings.snapshotMinutes(), force] {
+        return Snapshots::record(path, text, minutes, force);
+    });
+}
+
+void MainWindow::showVersionHistory(EditorTab *tab)
+{
+    if (!tab || tab->isUntitled()) {
+        statusBar()->showMessage(tr("Save the note first: versions are kept for saved notes"), 5000);
+        return;
+    }
+    const auto entries = runAndWait([path = tab->filePath()] { return Snapshots::list(path); }, tr("Reading versions…"), this);
+    if (!entries)
+        return;
+    VersionHistoryDialog dialog(tab->filePath(), *entries, this);
+    QPointer<EditorTab> guard(tab);
+    connect(&dialog, &VersionHistoryDialog::restoreRequested, this, [this, guard](const QString &text) {
+        if (!guard)
+            return;
+        guard->editor()->applyText(text); // undo takes it back; saving keeps it
+        activate(guard);
+        statusBar()->showMessage(tr("Restored an earlier version: save to keep it, or undo"), 8000);
+    });
+    dialog.exec();
 }
 
 void MainWindow::exportNote(bool pdf)

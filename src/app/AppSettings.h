@@ -42,6 +42,9 @@ public:
     static constexpr auto dailyTemplateKey = "notes/dailyTemplate"; // a note used as the template
     static constexpr auto templatesFolderKey = "notes/templatesFolder";
     static constexpr auto updateLinksKey = "notes/updateLinks"; // after a rename or move: "ask", "always", "never"
+    static constexpr auto snapshotsKey = "notes/snapshots";              // version history on/off
+    static constexpr auto snapshotMinutesKey = "notes/snapshotMinutes"; // at most one copy per note this often
+    static constexpr auto snapshotDaysKey = "notes/snapshotDays";       // kept this long
     static constexpr auto checkUpdatesOnStartKey = "updates/checkOnStart";
     static constexpr auto lastUpdateCheckKey = "updates/lastCheck"; // UTC
     static constexpr auto skippedUpdateKey = "updates/skippedVersion";
@@ -67,6 +70,9 @@ public:
     QString dailyTemplate() const { return value(dailyTemplateKey).toString(); }
     QString templatesFolder() const { return value(templatesFolderKey, QStringLiteral("templates")).toString(); }
     QString updateLinks() const { return value(updateLinksKey, QStringLiteral("ask")).toString(); }
+    bool snapshots() const { return value(snapshotsKey, true).toBool(); }
+    int snapshotMinutes() const { return value(snapshotMinutesKey, 5).toInt(); }
+    int snapshotDays() const { return value(snapshotDaysKey, 7).toInt(); }
     bool checkUpdatesOnStart() const { return value(checkUpdatesOnStartKey, false).toBool(); } // off: asks GitHub
     QStringList enabledPlugins() const { return value(enabledPluginsKey).toStringList(); }
 

@@ -180,6 +180,31 @@ QWidget *SettingsDialog::createNotesPage()
                               "Markdown links pointing to it, and the relative links of the notes it holds, can be "
                               "changed to match.")));
 
+    layout->addWidget(heading(tr("Version history")));
+    auto *history = new QFormLayout;
+    auto *keep = new QCheckBox(tr("Keep copies of notes as they are opened and saved"), page);
+    keep->setChecked(settings.snapshots());
+    connect(keep, &QCheckBox::toggled, this,
+            [](bool on) { AppSettings::instance().setValue(QString::fromLatin1(AppSettings::snapshotsKey), on); });
+    history->addRow(QString(), keep);
+    auto *minutes = new QSpinBox(page);
+    minutes->setRange(0, 240);
+    minutes->setSuffix(tr(" min"));
+    minutes->setValue(settings.snapshotMinutes());
+    connect(minutes, &QSpinBox::valueChanged, this,
+            [](int value) { AppSettings::instance().setValue(QString::fromLatin1(AppSettings::snapshotMinutesKey), value); });
+    history->addRow(tr("At most one copy every"), minutes);
+    auto *days = new QSpinBox(page);
+    days->setRange(1, 365);
+    days->setSuffix(tr(" days"));
+    days->setValue(settings.snapshotDays());
+    connect(days, &QSpinBox::valueChanged, this,
+            [](int value) { AppSettings::instance().setValue(QString::fromLatin1(AppSettings::snapshotDaysKey), value); });
+    history->addRow(tr("Keep them for"), days);
+    layout->addLayout(history);
+    layout->addWidget(hint(tr("File → Version History shows a note's copies and can bring one back. They're kept in "
+                              "MDEditor's own data folder, not next to the notes.")));
+
     layout->addWidget(heading(tr("Templates")));
     auto *templates = new QFormLayout;
     templates->addRow(tr("Templates folder"),

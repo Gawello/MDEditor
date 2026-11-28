@@ -138,6 +138,8 @@ private:
     void updateWordCount();
     void updateBacklinkCount();
     void exportNote(bool pdf); // File → Export to PDF / HTML
+    void recordSnapshot(EditorTab *tab, bool force); // version history, in the background
+    void showVersionHistory(EditorTab *tab);
     void openDailyNote();
     void showGraph();
     void insertTemplate(MarkdownEditor *editor);

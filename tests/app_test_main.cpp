@@ -1,10 +1,12 @@
 #include "TestHarness.h"
 #include "editor/MathRenderer.h"
+#include "notes/Snapshots.h"
 #include "plugins/PluginManager.h"
 #include "theme/ThemeManager.h"
 
 #include <QApplication>
 #include <QSettings>
+#include <QTemporaryDir>
 
 int main(int argc, char *argv[])
 {
@@ -12,6 +14,8 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName(QStringLiteral("MDEditorTests")); // never touch the user's settings
     QApplication::setApplicationName(QStringLiteral("MDEditorTests"));
     QSettings().clear();
+    QTemporaryDir snapshots; // version history copies made by the tests go here, not in the profile
+    Snapshots::setRoot(snapshots.path());
     ThemeManager::instance().initialize();
 
     // An argument runs only the tests whose name contains it: app_tests backlinks
