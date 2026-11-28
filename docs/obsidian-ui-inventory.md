@@ -167,10 +167,10 @@ out.
 | Toggle red / orange / yellow / green / blue / purple highlight | ❌ |
 | Clear formatting | ✅ |
 | Toggle bullet list, numbered list, blockquote; Set as heading 1–6, Toggle heading, Remove heading | ✅ |
-| Toggle checkbox status [Ctrl+L], Cycle bullet/checkbox | ❌ (click works) |
+| Toggle checkbox status [Ctrl+L], Cycle bullet/checkbox | ✅ |
 | Indent / Unindent list item | ✅ (Tab / Shift+Tab) |
-| Move line up / down | ❌ |
-| Delete paragraph [Ctrl+D] | ❌ |
+| Move line up / down | ✅ (Alt+↑/↓) |
+| Delete paragraph [Ctrl+D] | ✅ |
 | Add cursor above / below | ❌ |
 | Insert callout, code block, footnote, horizontal rule, Markdown link [Ctrl+K], math block, table, internal link, embed, tag, attachment | 🟡 no "insert tag/embed/attachment" |
 | Fold more / Fold less / Toggle fold on the current line / Fold all headings and lists / Unfold all / Toggle fold properties | 🟡 toggle, fold all, unfold all |

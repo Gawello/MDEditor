@@ -53,6 +53,11 @@ public:
 
     // Replaces the whole text as one undo step, keeping the cursor position where possible.
     void replaceAll(const QString &text);
+    // Line commands, on the cursor's line or every line of the selection, each one undo step. A folded section
+    // moves past as a whole.
+    bool moveLines(int direction); // -1 up, +1 down; false at the start / end
+    void deleteLines();
+    void transformLines(const std::function<std::u16string(std::u16string_view)> &change);
     // Changes the text to `text` by replacing only the part that differs, as one undo step: the cursor, the
     // scroll position and the folds elsewhere stay as they are.
     void applyText(const QString &text);

@@ -48,3 +48,27 @@ TEST_CASE(clear_formatting_keeps_links_and_escapes)
     CHECK(stripInlineFormatting(u"a [**l**](u) \\*b\\*") == u"a [**l**](u) \\*b\\*");
     CHECK(stripInlineFormatting(u"plain") == u"plain");
 }
+
+TEST_CASE(toggle_checkbox_like_obsidian)
+{
+    CHECK(md::toggleCheckbox(u"- [ ] task") == u"- [x] task");
+    CHECK(md::toggleCheckbox(u"  - [x] done") == u"  - [ ] done");
+    CHECK(md::toggleCheckbox(u"- [X] Done") == u"- [ ] Done");
+    CHECK(md::toggleCheckbox(u"- item") == u"- [ ] item");
+    CHECK(md::toggleCheckbox(u"3. step") == u"3. [ ] step");
+    CHECK(md::toggleCheckbox(u"text") == u"- [ ] text");
+    CHECK(md::toggleCheckbox(u"  text") == u"  - [ ] text");
+    CHECK(md::toggleCheckbox(u"") == u"- [ ] ");
+    CHECK(md::toggleCheckbox(u"# Heading") == u"# Heading");
+    CHECK(md::toggleCheckbox(u"---") == u"---");
+}
+
+TEST_CASE(cycle_list_item_like_obsidian)
+{
+    CHECK(md::cycleListItem(u"text") == u"- text");
+    CHECK(md::cycleListItem(u"- text") == u"- [ ] text");
+    CHECK(md::cycleListItem(u"- [x] text") == u"text");
+    CHECK(md::cycleListItem(u"    - [ ] nested") == u"    nested");
+    CHECK(md::cycleListItem(u"1. one") == u"1. [ ] one");
+    CHECK(md::cycleListItem(u"> quote") == u"> quote");
+}

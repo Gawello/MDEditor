@@ -249,6 +249,127 @@ void MarkdownEditor::replaceAll(const QString &text)
     setTextCursor(cursor);
 }
 
+namespace {
+
+// The lines the cursor or the selection touches (a selection ending at the start of a line leaves that one out).
+std::pair<QTextBlock, QTextBlock> selectedLines(const QTextCursor &cursor, QTextDocument *document)
+{
+    const QTextBlock first = document->findBlock(cursor.selectionStart());
+    QTextBlock last = document->findBlock(cursor.selectionEnd());
+    if (cursor.hasSelection() && last != first && cursor.selectionEnd() == last.position())
+        last = last.previous();
+    return {first, last};
+}
+
+} // namespace
+
+bool MarkdownEditor::moveLines(int direction)
+{
+    QTextCursor cursor = textCursor();
+    auto [first, last] = selectedLines(cursor, document());
+    // The neighbour that changes places: one visible line and whatever is folded under it.
+    QTextBlock from;
+    QTextBlock to;
+    if (direction < 0) {
+        to = first.previous();
+        from = to;
+        while (from.isValid() && !from.isVisible())
+            from = from.previous();
+        if (!from.isValid())
+            return false;
+    } else {
+        from = last.next();
+        if (!from.isValid())
+            return false;
+        to = from;
+        while (to.next().isValid() && !to.next().isVisible())
+            to = to.next();
+    }
+    const int anchorOffset = cursor.anchor() - first.position();
+    const int positionOffset = cursor.position() - first.position();
+    const auto textOf = [](QTextBlock a, const QTextBlock &b) {
+        QStringList lines;
+        for (; a.isValid(); a = a.next()) {
+            lines << a.text();
+            if (a == b)
+                break;
+        }
+        return lines;
+    };
+    const QStringList moving = textOf(first, last);
+    const QStringList neighbour = textOf(from, to);
+    const QTextBlock start = direction < 0 ? from : first;
+    const QTextBlock end = direction < 0 ? last : to;
+    const QStringList result = direction < 0 ? moving + neighbour : neighbour + moving;
+    const int startPosition = start.position();
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    edit.setPosition(startPosition);
+    edit.setPosition(end.position() + end.length() - 1, QTextCursor::KeepAnchor);
+    edit.insertText(result.join(u'\n'));
+    edit.endEditBlock();
+    // The selection moves with the lines.
+    int movedStart = startPosition;
+    if (direction > 0) {
+        for (const QString &line : neighbour)
+            movedStart += int(line.size()) + 1;
+    }
+    QTextCursor moved(document());
+    moved.setPosition(std::min(movedStart + anchorOffset, document()->characterCount() - 1));
+    moved.setPosition(std::min(movedStart + positionOffset, document()->characterCount() - 1), QTextCursor::KeepAnchor);
+    setTextCursor(moved);
+    ensureCursorVisible();
+    return true;
+}
+
+void MarkdownEditor::deleteLines()
+{
+    const auto [first, last] = selectedLines(textCursor(), document());
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    if (last.next().isValid()) { // the lines and their line break
+        edit.setPosition(first.position());
+        edit.setPosition(last.next().position(), QTextCursor::KeepAnchor);
+    } else if (first.previous().isValid()) { // the last lines: the break before them
+        edit.setPosition(first.previous().position() + first.previous().length() - 1);
+        edit.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    } else {
+        edit.setPosition(first.position());
+        edit.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+    }
+    edit.removeSelectedText();
+    edit.endEditBlock();
+    setTextCursor(edit);
+}
+
+void MarkdownEditor::transformLines(const std::function<std::u16string(std::u16string_view)> &change)
+{
+    QTextCursor cursor = textCursor();
+    const auto [first, last] = selectedLines(cursor, document());
+    const bool single = first == last && !cursor.hasSelection();
+    const int column = cursor.positionInBlock();
+    const int oldLength = first.length();
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    for (QTextBlock block = first; block.isValid(); block = block.next()) {
+        const QString line = block.text();
+        const QString changed = QString::fromStdU16String(change(toView(line)));
+        if (changed != line) {
+            edit.setPosition(block.position());
+            edit.setPosition(block.position() + int(line.size()), QTextCursor::KeepAnchor);
+            edit.insertText(changed);
+        }
+        if (block == last)
+            break;
+    }
+    edit.endEditBlock();
+    if (single) { // the cursor keeps its place in the text after what was added or removed in front
+        QTextCursor at(first);
+        at.setPosition(first.position() + std::clamp(column + (first.length() - oldLength), 0, first.length() - 1));
+        setTextCursor(at);
+    }
+}
+
 void MarkdownEditor::applyText(const QString &text)
 {
     const QString old = markdown();

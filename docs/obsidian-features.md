@@ -67,8 +67,8 @@ any text file can be edited, not just Markdown.
 | Inline title (file name editable above the note) | ❌ | Renames the file | P2 | S |
 | Formatting commands and toolbar (Format menu) | ✅ | Plus right-click menus | | |
 | Word and character count | ✅ | | | |
-| Move line up / down, delete paragraph (Ctrl+D) | ❌ | | P2 | S |
-| Toggle checkbox (Ctrl+L), cycle bullet → checkbox → plain | ❌ | Clicking the box works | P2 | S |
+| Move line up / down, delete paragraph (Ctrl+D) | ✅ | Alt+↑/↓ | | |
+| Toggle checkbox (Ctrl+L), cycle bullet → checkbox → plain | ✅ | | | |
 | Follow the link under the cursor from the keyboard (Alt+Enter; Ctrl+Enter in a new tab) | ✅ | Ctrl+Alt+Enter: other pane | | |
 | Insert current date / time | ❌ | Template date formats | P3 | S |
 | "Search for “selection”" in the right-click menu | ❌ | Opens folder search | P2 | S |

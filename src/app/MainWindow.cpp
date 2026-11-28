@@ -18,6 +18,7 @@
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/Completions.h"
+#include "markdown/LineStyle.h"
 #include "markdown/LinkRewrite.h"
 #include "notes/NoteEdits.h"
 #include "notes/NoteIndex.h"
@@ -337,6 +338,20 @@ void MainWindow::createMenus()
                     [this] { currentEditor()->insertPlainText(QGuiApplication::clipboard()->text()); });
     edit->addAction(tr("Select &All"), QKeySequence::SelectAll, this, [this] { currentEditor()->selectAll(); });
     edit->addSeparator();
+    // Obsidian's line commands (its Ctrl+D deletes the paragraph, Ctrl+L toggles a checkbox).
+    edit->addAction(tr("&Move Line Up"), QKeySequence(Qt::ALT | Qt::Key_Up), this, [this] { currentEditor()->moveLines(-1); });
+    edit->addAction(tr("Move Line &Down"), QKeySequence(Qt::ALT | Qt::Key_Down), this,
+                    [this] { currentEditor()->moveLines(1); });
+    edit->addAction(tr("Delete &Line"), QKeySequence(Qt::CTRL | Qt::Key_D), this, [this] { currentEditor()->deleteLines(); });
+    QAction *checkbox = edit->addAction(tr("Toggle Chec&kbox"), QKeySequence(Qt::CTRL | Qt::Key_L), this, [this] {
+        if (MarkdownEditor *editor = markdownEditor())
+            editor->transformLines(md::toggleCheckbox);
+    });
+    QAction *cycle = edit->addAction(tr("C&ycle List Item"), this, [this] {
+        if (MarkdownEditor *editor = markdownEditor())
+            editor->transformLines(md::cycleListItem);
+    });
+    edit->addSeparator();
     edit->addAction(tr("&Find…"), QKeySequence::Find, this, [this] { currentTab()->findBar()->openFind(); });
     edit->addAction(tr("R&eplace…"), QKeySequence(Qt::CTRL | Qt::Key_H), this,
                     [this] { currentTab()->findBar()->openReplace(); });
@@ -364,6 +379,7 @@ void MainWindow::createMenus()
     QMenu *insert = format->addMenu(tr("I&nsert"));
     MarkdownEditor::addInsertActions(insert, markdown);
     m_markdownActions = format->actions();
+    m_markdownActions << checkbox << cycle;
     format->addSeparator();
     format->addAction(tr("&Prettify"), MarkdownEditor::prettifyShortcut(), this,
                       [this] { currentEditor()->formatAtCursor(); });

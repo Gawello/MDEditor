@@ -168,4 +168,57 @@ std::u16string stripInlineFormatting(std::u16string_view text)
     return result;
 }
 
+namespace {
+
+// The line parsed on its own (no fence or table context), as the Paragraph menu does.
+BlockInfo infoOf(std::u16string_view line)
+{
+    return parseLine(line, BlockState{}, {}).info;
+}
+
+} // namespace
+
+std::u16string toggleCheckbox(std::u16string_view line)
+{
+    const BlockInfo info = infoOf(line);
+    std::u16string result(line);
+    if (info.type == BlockType::TaskItem && info.checkboxStart >= 0) {
+        result[size_t(info.checkboxStart) + 1] = info.checked ? u' ' : u'x';
+        return result;
+    }
+    if (info.type == BlockType::BulletItem || info.type == BlockType::OrderedItem) {
+        result.insert(size_t(info.contentStart), u"[ ] ");
+        return result;
+    }
+    if (info.type == BlockType::Paragraph || info.type == BlockType::Blank) {
+        const size_t indent = line.find_first_not_of(u" \t");
+        const size_t at = indent == std::u16string_view::npos ? line.size() : indent;
+        result.insert(at, u"- [ ] ");
+        return result;
+    }
+    return result;
+}
+
+std::u16string cycleListItem(std::u16string_view line)
+{
+    const BlockInfo info = infoOf(line);
+    std::u16string result(line);
+    switch (info.type) {
+    case BlockType::Paragraph:
+    case BlockType::Blank: {
+        const size_t indent = line.find_first_not_of(u" \t");
+        result.insert(indent == std::u16string_view::npos ? line.size() : indent, u"- ");
+        return result;
+    }
+    case BlockType::BulletItem:
+    case BlockType::OrderedItem:
+        result.insert(size_t(info.contentStart), u"[ ] ");
+        return result;
+    case BlockType::TaskItem: // back to the text, keeping the indentation
+        return std::u16string(line.substr(0, size_t(info.indent))) + std::u16string(line.substr(size_t(info.contentStart)));
+    default:
+        return result;
+    }
+}
+
 } // namespace md

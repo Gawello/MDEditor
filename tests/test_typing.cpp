@@ -1,6 +1,7 @@
 #include "TestHarness.h"
 #include "app/AppSettings.h"
 #include "editor/MarkdownEditor.h"
+#include "markdown/LineStyle.h"
 
 #include <QApplication>
 #include <QKeyEvent>
@@ -127,4 +128,75 @@ TEST_CASE(pairing_follows_the_settings_and_the_mode)
     QApplication::sendEvent(&editor, &ctrl);
     CHECK(text(editor) != "()");
     setPairing(true, true);
+}
+
+TEST_CASE(moving_and_deleting_lines)
+{
+    MarkdownEditor editor;
+    editor.setMarkdown(QStringLiteral("a\nbb\nc"));
+    QTextCursor cursor(editor.document()->findBlockByNumber(1));
+    cursor.movePosition(QTextCursor::Right);
+    editor.setTextCursor(cursor);
+    CHECK(editor.moveLines(-1));
+    CHECK(shown(editor) == "b|b\na\nc");
+    CHECK(!editor.moveLines(-1)); // already first
+    CHECK(editor.moveLines(1) && editor.moveLines(1));
+    CHECK(shown(editor) == "a\nc\nb|b");
+    CHECK(!editor.moveLines(1));
+    editor.undo();
+    CHECK(text(editor) == "a\nbb\nc");
+
+    // A selection over two lines moves both and stays selected.
+    editor.setMarkdown(QStringLiteral("1\n2\n3\n4"));
+    select(editor, 2, 5); // "2\n3"
+    CHECK(editor.moveLines(1));
+    CHECK(shown(editor) == "1\n4\n[2\n3]");
+
+    // A folded section moves past as a whole.
+    editor.setMarkdown(QStringLiteral("# A\nx\n# B\ny"));
+    QCoreApplication::processEvents();
+    CHECK(editor.toggleFold(editor.document()->findBlockByNumber(0)));
+    editor.setTextCursor(QTextCursor(editor.document()->findBlockByNumber(2)));
+    CHECK(editor.moveLines(-1));
+    CHECK(text(editor) == "# B\n# A\nx\ny");
+
+    // Deleting: a middle line, the last line, the only line.
+    editor.setMarkdown(QStringLiteral("a\nb\nc"));
+    editor.setTextCursor(QTextCursor(editor.document()->findBlockByNumber(1)));
+    editor.deleteLines();
+    CHECK(shown(editor) == "a\n|c");
+    editor.deleteLines();
+    CHECK(text(editor) == "a");
+    editor.deleteLines();
+    CHECK(text(editor).isEmpty());
+    editor.undo();
+    CHECK(text(editor) == "a");
+}
+
+TEST_CASE(toggling_checkboxes)
+{
+    MarkdownEditor editor;
+    editor.setMarkdown(QStringLiteral("buy milk"));
+    editor.moveCursor(QTextCursor::End);
+    editor.transformLines(md::toggleCheckbox);
+    CHECK(shown(editor) == "- [ ] buy milk|");
+    editor.transformLines(md::toggleCheckbox);
+    CHECK(shown(editor) == "- [x] buy milk|");
+    editor.setMarkdown(QStringLiteral("- a\n- [x] b\nc"));
+    editor.selectAll();
+    editor.transformLines(md::toggleCheckbox);
+    CHECK(text(editor) == "- [ ] a\n- [ ] b\n- [ ] c");
+    editor.undo();
+    CHECK(text(editor) == "- a\n- [x] b\nc");
+}
+
+TEST_CASE(line_shortcuts_reach_the_window)
+{
+    MarkdownEditor editor;
+    for (const QKeyCombination combination : {QKeyCombination(Qt::CTRL, Qt::Key_D), QKeyCombination(Qt::CTRL, Qt::Key_L),
+                                              QKeyCombination(Qt::ALT, Qt::Key_Up), QKeyCombination(Qt::ALT, Qt::Key_Down)}) {
+        QKeyEvent override(QEvent::ShortcutOverride, combination.key(), combination.keyboardModifiers());
+        QApplication::sendEvent(&editor, &override);
+        CHECK(!override.isAccepted());
+    }
 }
