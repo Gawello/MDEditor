@@ -52,7 +52,7 @@ bool SearchQuery::hasOperators(const QString &text)
 {
     for (const QString &token : tokenize(text)) {
         QString bare = token.startsWith(u'-') ? token.mid(1) : token;
-        if (bare == u"OR" || bare.startsWith(u'"') || bare.startsWith(u'('))
+        if (bare == u"OR" || bare.startsWith(u'"') || bare.startsWith(u'(') || (bare.startsWith(u'[') && bare.endsWith(u']') && !bare.startsWith(u"[[")))
             return true;
         if (token.startsWith(u'-') && token.size() > 1)
             return true;
@@ -80,6 +80,17 @@ SearchQuery SearchQuery::parse(const QString &text, Qt::CaseSensitivity defaultC
         if (token.startsWith(u'-') && token.size() > 1) {
             term.negated = true;
             token = token.mid(1);
+        }
+        // [property] / [property:value]
+        if (token.startsWith(u'[') && token.endsWith(u']') && !token.startsWith(QStringLiteral("[[")) && token.size() > 2) {
+            const QString inside = token.mid(1, token.size() - 2);
+            term.kind = Kind::Property;
+            term.key = inside.section(u':', 0, 0).trimmed();
+            term.text = unquote(inside.section(u':', 1).trimmed());
+            term.caseSensitivity = sensitivity;
+            if (!term.key.isEmpty())
+                current << term;
+            continue;
         }
         Kind kind = Kind::Text;
         static const QList<std::pair<QString, Kind>> kinds{
@@ -183,6 +194,22 @@ bool SearchQuery::matchTerms(const QList<Term> &terms, const QString &relativePa
         case Kind::Group:
             found = term.inner && term.inner->matches(relativePath, text);
             break;
+        case Kind::Property: {
+            const md::NoteScan scan = md::scanNote(toView(text));
+            for (const md::Property &property : scan.properties) {
+                if (QString::fromStdU16String(property.key).compare(term.key, Qt::CaseInsensitive) != 0)
+                    continue;
+                if (term.text.isEmpty()) {
+                    found = true;
+                    break;
+                }
+                for (const std::u16string &value : md::propertyList(property.value)) {
+                    if (QString::fromStdU16String(value).contains(term.text, term.caseSensitivity))
+                        found = true;
+                }
+            }
+            break;
+        }
         case Kind::Line:
         case Kind::Block:
         case Kind::Task:

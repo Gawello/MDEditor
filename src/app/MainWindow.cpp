@@ -32,6 +32,7 @@
 #include "panels/FolderPanel.h"
 #include "panels/GraphView.h"
 #include "panels/LinksPanel.h"
+#include "panels/PropertiesPanel.h"
 #include "panels/OutlinePanel.h"
 #include "panels/SearchPanel.h"
 #include "panels/SideBar.h"
@@ -152,6 +153,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_tagPanel = new TagPanel(m_index, m_sideBar);
     m_backlinks = new BacklinksPanel(m_index, m_sideBar);
     m_outgoing = new OutgoingLinksPanel(m_index, m_sideBar);
+    m_properties = new PropertiesPanel(m_index, m_sideBar);
+    m_properties->setObjectName(QStringLiteral("properties"));
     m_outline->setObjectName(QStringLiteral("outline"));
     m_search->setObjectName(QStringLiteral("search"));
     m_tagPanel->setObjectName(QStringLiteral("tags"));
@@ -162,6 +165,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_sideBar->addPage(tr("Outgoing"), m_outgoing);
     m_sideBar->addPage(tr("Search"), m_search);
     m_sideBar->addPage(tr("Tags"), m_tagPanel);
+    m_sideBar->addPage(tr("Properties"), m_properties);
+    connect(m_properties, &PropertiesPanel::searchRequested, this, [this](const QString &query) {
+        m_sideBar->showPage(m_search);
+        m_search->focusSearch(query);
+    });
     connect(m_backlinks, &BacklinksPanel::openRequested, this, &MainWindow::openAt);
     connect(m_backlinks, &BacklinksPanel::linkMentionRequested, this,
             [this](const BacklinksPanel::Mention &mention, const QString &target) {
@@ -458,6 +466,7 @@ void MainWindow::createMenus()
     view->addAction(tr("Ta&gs"), this, [this] { toggleSidePage(m_tagPanel); });
     view->addAction(tr("Bac&klinks"), this, [this] { toggleSidePage(m_backlinks); });
     view->addAction(tr("Outgoing Link&s"), this, [this] { toggleSidePage(m_outgoing); });
+    view->addAction(tr("All Properties"), this, [this] { toggleSidePage(m_properties); });
     view->addAction(tr("Graph &View"), QKeySequence(Qt::CTRL | Qt::Key_G), this, &MainWindow::showGraph);
     view->addAction(tr("&Command Palette…"), QKeySequence(Qt::CTRL | Qt::Key_P), this, [this] {
         QMetaObject::invokeMethod(this, &MainWindow::showCommandPalette, Qt::QueuedConnection);

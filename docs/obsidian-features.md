@@ -110,7 +110,7 @@ any text file can be edited, not just Markdown.
 | YAML frontmatter shown as properties | ✅ | Read-only rendering; raw YAML on the cursor | | |
 | Property editor with types (text, list, number, checkbox, date, date & time) | ❌ | Add/remove/edit fields with widgets; right-click to change the type, sort, clear; Add property (Ctrl+;) | P2 | L |
 | Property name and value autocomplete | ✅ | In the YAML front matter; `[[` in values suggests notes | | |
-| Properties view (all properties in the folder, counts) | ❌ | | P2 | S |
+| Properties view (all properties in the folder, counts) | ✅ | Keys and values, a click searches | | |
 | `tags`, `aliases`, `cssclasses` special properties | 🟡 | `tags` counted; `aliases` not used | P2 | S |
 | Show properties: visible / hidden / source | ❌ | | P3 | S |
 
@@ -123,7 +123,7 @@ any text file can be edited, not just Markdown.
 | Command palette (Ctrl+P) | ✅ | | | |
 | Pinned commands, recently used first | ❌ | | P3 | S |
 | Search in the folder | ✅ | Text, match case, regex, tag results | | |
-| Search operators (`path:`, `file:`, `tag:`, `line:`, `section:`, `block:`, `task:`, `[property:value]`) | 🟡 | All but `[property:value]` | P3 | S |
+| Search operators (`path:`, `file:`, `tag:`, `line:`, `section:`, `block:`, `task:`, `[property:value]`) | ✅ | | | |
 | Explain search, sort results, more context, copy results | ❌ | | P3 | S |
 | Navigation history: Back / Forward (Alt+←/→) | ✅ | Window-wide, across tabs and panes; mouse side buttons | | |
 | Bookmarks: files and folders | ✅ | | | |

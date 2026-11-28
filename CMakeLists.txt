@@ -84,6 +84,7 @@ if(MDEDITOR_BUILD_APP)
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h
         src/panels/GraphView.cpp src/panels/GraphView.h
         src/panels/LinksPanel.cpp src/panels/LinksPanel.h
+        src/panels/PropertiesPanel.cpp src/panels/PropertiesPanel.h
         src/panels/OutlinePanel.cpp src/panels/OutlinePanel.h
         src/panels/SearchPanel.cpp src/panels/SearchPanel.h
         src/panels/SideBar.cpp src/panels/SideBar.h

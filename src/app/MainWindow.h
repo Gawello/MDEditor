@@ -30,6 +30,7 @@ class SideBar;
 class TagPanel;
 class BacklinksPanel;
 class OutgoingLinksPanel;
+class PropertiesPanel;
 class GraphView;
 
 class MainWindow : public QMainWindow {
@@ -192,6 +193,7 @@ private:
     TagPanel *m_tagPanel = nullptr;
     BacklinksPanel *m_backlinks = nullptr;
     OutgoingLinksPanel *m_outgoing = nullptr;
+    PropertiesPanel *m_properties = nullptr;
     QToolButton *m_backlinkCount = nullptr; // status bar: "3 backlinks", opens the panel
     QLabel *m_wordCount = nullptr;
     QWidget *m_graphWindow = nullptr;

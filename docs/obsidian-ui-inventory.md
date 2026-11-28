@@ -121,7 +121,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Outgoing links | Links (resolved and unresolved, with headings), Unlinked mentions | 🟡 no unlinked mentions |
 | Outline | Filter, Auto-scroll to current section, Collapse all; drag headings to move sections | 🟡 no filter, no drag |
 | Tags | Sort (name A–Z/Z–A, frequency high/low), Show nested tags, Expand all, filter | 🟡 list with counts |
-| All properties | Every property with its count, sort, filter | ❌ |
+| All properties | Every property with its count, sort, filter | 🟡 keys and values with counts; no sort/filter |
 | File properties | The note's properties, with type warnings | ❌ |
 | Footnotes | All footnotes of the note | ❌ |
 | All panels | ← → history, Bookmark, ⋮ More options; right-click a sidebar tab: Close; drag between sidebars | ❌ |

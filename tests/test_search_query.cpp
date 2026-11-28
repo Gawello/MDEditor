@@ -1,6 +1,12 @@
 #include "TestHarness.h"
 #include "notes/SearchQuery.h"
 #include "panels/SearchPanel.h"
+#include "panels/PropertiesPanel.h"
+#include "notes/NoteIndex.h"
+
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QTreeWidget>
 
 #include <QDir>
 #include <QFile>
@@ -66,4 +72,42 @@ TEST_CASE(search_panel_runs_obsidian_queries)
     query.text = QStringLiteral("tag:work");
     found = SearchPanel::run({a, b}, query, nullptr);
     CHECK(found.size() == 1 && found[0].path == a);
+}
+
+TEST_CASE(property_search_and_panel)
+{
+    const QString note = QStringLiteral("---\nstatus: in progress\ntags: [a, b]\nauthors:\n  - Ann\n  - Bob\n---\ntext\n");
+    CHECK(SearchQuery::parse(QStringLiteral("[status]")).matches("x.md", note));
+    CHECK(SearchQuery::parse(QStringLiteral("[status:progress]")).matches("x.md", note));
+    CHECK(SearchQuery::parse(QStringLiteral("[status:\"in progress\"]")).matches("x.md", note));
+    CHECK(!SearchQuery::parse(QStringLiteral("[status:done]")).matches("x.md", note));
+    CHECK(SearchQuery::parse(QStringLiteral("[authors:bob]")).matches("x.md", note));
+    CHECK(!SearchQuery::parse(QStringLiteral("[missing]")).matches("x.md", note));
+    CHECK(SearchQuery::parse(QStringLiteral("-[missing] text")).matches("x.md", note));
+    CHECK(SearchQuery::hasOperators(QStringLiteral("[status]")) && !SearchQuery::hasOperators(QStringLiteral("[[link]]")));
+
+    QTemporaryDir dir;
+    for (const auto &[name, text] : {std::pair{"a.md", "---\nstatus: draft\n---\n"}, std::pair{"b.md", "---\nstatus: draft\ntype: idea\n---\n"},
+                                     std::pair{"c.md", "---\nstatus: done\n---\n"}}) {
+        QFile file(dir.filePath(QString::fromLatin1(name)));
+        CHECK(file.open(QIODevice::WriteOnly));
+        file.write(text);
+    }
+    NoteIndex index;
+    index.setRoot(dir.path());
+    QElapsedTimer timer;
+    timer.start();
+    while ((index.scanning() || index.notes().size() < 3) && timer.elapsed() < 5000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    PropertiesPanel panel(&index);
+    panel.setAttribute(Qt::WA_DontShowOnScreen);
+    panel.show();
+    QTreeWidget *tree = panel.tree();
+    CHECK(tree->topLevelItemCount() == 2);
+    CHECK(tree->topLevelItem(0)->text(0) == "status" && tree->topLevelItem(0)->text(1) == "3");
+    CHECK(tree->topLevelItem(0)->child(0)->text(0) == "draft" && tree->topLevelItem(0)->child(0)->text(1) == "2");
+    QString asked;
+    QObject::connect(&panel, &PropertiesPanel::searchRequested, [&asked](const QString &query) { asked = query; });
+    emit tree->itemClicked(tree->topLevelItem(0)->child(0), 0);
+    CHECK(asked == "[status:draft]");
 }

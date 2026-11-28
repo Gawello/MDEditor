@@ -8,13 +8,14 @@
 
 // Obsidian's search syntax: words (all must be there), "exact phrases", -excluded, OR between alternatives, and
 // operators: path:, file:, tag:, content:, line:(…), section:(…), block:(…), task:(…), task-todo:(…),
-// task-done:(…), match-case:, ignore-case:. Parentheses group terms.
+// task-done:(…), match-case:, ignore-case:, [property] and [property:value]. Parentheses group terms.
 class SearchQuery {
 public:
-    enum class Kind { Text, Path, File, Tag, Content, Line, Section, Block, Task, TaskTodo, TaskDone, Group };
+    enum class Kind { Text, Path, File, Tag, Content, Line, Section, Block, Task, TaskTodo, TaskDone, Group, Property };
     struct Term {
         Kind kind = Kind::Text;
-        QString text;                  // for the plain kinds
+        QString text;                  // for the plain kinds; Property: the value wanted (empty: any)
+        QString key;                   // Property: [key] or [key:value]
         bool negated = false;
         Qt::CaseSensitivity caseSensitivity = Qt::CaseInsensitive;
         std::shared_ptr<SearchQuery> inner; // line:(…), section:(…), …, (…)
