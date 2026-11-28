@@ -78,6 +78,7 @@ if(MDEDITOR_BUILD_APP)
         src/editor/MarkdownEditor.cpp src/editor/MarkdownEditor.h
         src/editor/MathRenderer.cpp src/editor/MathRenderer.h
         src/notes/NoteIndex.cpp src/notes/NoteIndex.h
+        src/notes/SearchQuery.cpp src/notes/SearchQuery.h
         src/notes/Templates.cpp src/notes/Templates.h
         src/format/FormatterRegistry.cpp src/format/FormatterRegistry.h
         src/panels/FolderPanel.cpp src/panels/FolderPanel.h

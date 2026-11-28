@@ -33,6 +33,7 @@ public:
         QString text;
         bool caseSensitive = false;
         bool regex = false;
+        QString root; // for path: and file: in Obsidian-style queries
     };
 
     explicit SearchPanel(NoteIndex *index, QWidget *parent = nullptr);

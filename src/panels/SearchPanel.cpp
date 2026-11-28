@@ -3,6 +3,7 @@
 #include "app/Background.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/NoteIndex.h"
+#include "notes/SearchQuery.h"
 #include "syntax/Syntax.h"
 
 #include <QCheckBox>
@@ -48,6 +49,8 @@ SearchPanel::SearchPanel(NoteIndex *index, QWidget *parent)
     , m_results(new QTreeWidget(this))
 {
     m_field->setPlaceholderText(tr("Search in folder…"));
+    m_field->setToolTip(tr("Words must all be in a note. Also: \"exact phrase\", -excluded, a OR b, path:, file:, tag:, "
+                           "line:(…), section:(…), block:(…), task:, task-todo:, task-done:, match-case:"));
     m_field->setClearButtonEnabled(true);
     m_status->setForegroundRole(QPalette::PlaceholderText);
     m_status->setWordWrap(true);
@@ -141,6 +144,40 @@ QList<SearchPanel::FileMatches> SearchPanel::run(const QStringList &files, const
     }
     const Qt::CaseSensitivity cs = query.caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
     int total = 0;
+    // Obsidian's syntax (path:, tag:, line:(…), "phrase", -word, OR…): whole notes match, the lines show why.
+    if (!query.regex && SearchQuery::hasOperators(query.text)) {
+        const SearchQuery parsed = SearchQuery::parse(query.text, cs);
+        if (parsed.isEmpty())
+            return results;
+        const QDir root(query.root);
+        for (const QString &path : files) {
+            if ((cancel && *cancel) || total >= maxMatches)
+                break;
+            if (!searchable(path))
+                continue;
+            QFile file(path);
+            if (file.size() > maxFileSize || !file.open(QIODevice::ReadOnly))
+                continue;
+            const QByteArray bytes = file.readAll();
+            if (bytes.left(65536).contains('\0'))
+                continue;
+            QString text = QString::fromUtf8(bytes);
+            text.remove(u'\r');
+            const QString relative = query.root.isEmpty() ? QFileInfo(path).fileName() : root.relativeFilePath(path);
+            if (!parsed.matches(relative, text))
+                continue;
+            FileMatches found{path, {}};
+            const QStringList lines = text.split(u'\n');
+            for (const SearchQuery::Hit &hit : parsed.hits(text)) {
+                found.matches.append({hit.line, hit.column, hit.length, lines.value(hit.line)});
+                ++total;
+            }
+            if (found.matches.isEmpty()) // matched by its path, name or tags only
+                found.matches.append({0, 0, 0, lines.value(0)});
+            results << found;
+        }
+        return results;
+    }
     for (const QString &path : files) {
         if ((cancel && *cancel) || total >= maxMatches)
             break;
@@ -187,7 +224,7 @@ void SearchPanel::search()
     if (m_cancel)
         *m_cancel = true;
     m_results->clear();
-    const Query query{m_field->text(), m_case->isChecked(), m_regex->isChecked()};
+    const Query query{m_field->text(), m_case->isChecked(), m_regex->isChecked(), m_index->root()};
     if (query.text.isEmpty()) {
         m_status->clear();
         return;
@@ -270,7 +307,7 @@ void SearchPanel::showTag(const QString &tag)
     paths.sort(Qt::CaseInsensitive);
     // The lines with the tag, found like a search (frontmatter tags give the file alone).
     const QString escaped = QRegularExpression::escape(tag);
-    const Query query{QStringLiteral("(?<!\\S)#%1(?:/[^\\s]*)?(?![\\w/-])").arg(escaped), false, true};
+    const Query query{QStringLiteral("(?<!\\S)#%1(?:/[^\\s]*)?(?![\\w/-])").arg(escaped), false, true, {}};
     QList<FileMatches> lines = run(paths, query, nullptr);
     for (const QString &path : std::as_const(paths)) {
         auto it = std::find_if(lines.begin(), lines.end(), [&](const FileMatches &f) { return f.path == path; });

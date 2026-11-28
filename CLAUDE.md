@@ -189,6 +189,8 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Line numbers: a child widget in the viewport's left margin (`updateMargins` makes the margin at least as wide),
   painted by `MarkdownEditor::paintLineNumbers` from the block geometry; lines collapsed to nothing get no number,
   image/embed/formula lines get theirs at the top.
+- Search syntax: `SearchQuery` (OR of ANDs of terms; `line:`/`section:`/`block:`/`task*:` hold an inner query run
+  on that piece of the note). `SearchPanel::run` uses it when `SearchQuery::hasOperators`, else the plain search.
 - Hotkeys: `Hotkeys::registerMenus` (after `createMenus`) lists every menu command by its English menu path
   ("Edit/Move Line Up") and applies `hotkeys/<path with |>` settings. Translating the menus would change these ids:
   give the actions object names first. The right-click menus show shortcut text from their own constants.

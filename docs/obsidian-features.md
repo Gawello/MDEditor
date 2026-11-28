@@ -123,7 +123,7 @@ any text file can be edited, not just Markdown.
 | Command palette (Ctrl+P) | ✅ | | | |
 | Pinned commands, recently used first | ❌ | | P3 | S |
 | Search in the folder | ✅ | Text, match case, regex, tag results | | |
-| Search operators (`path:`, `file:`, `tag:`, `line:`, `section:`, `block:`, `task:`, `[property:value]`) | ❌ | | P2 | M |
+| Search operators (`path:`, `file:`, `tag:`, `line:`, `section:`, `block:`, `task:`, `[property:value]`) | 🟡 | All but `[property:value]` | P3 | S |
 | Explain search, sort results, more context, copy results | ❌ | | P3 | S |
 | Navigation history: Back / Forward (Alt+←/→) | ✅ | Window-wide, across tabs and panes; mouse side buttons | | |
 | Bookmarks: files and folders | ✅ | | | |

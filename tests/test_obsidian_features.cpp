@@ -85,15 +85,15 @@ TEST_CASE(search_in_folder)
 {
     Vault vault;
     std::unique_ptr<NoteIndex> index(indexOf(vault));
-    const auto results = SearchPanel::run(index->files(), {"idea", false, false}, nullptr);
+    const auto results = SearchPanel::run(index->files(), {"idea", false, false, {}}, nullptr);
     int matches = 0;
     for (const auto &file : results)
         matches += int(file.matches.size());
     CHECK(results.size() == 3); // Home, Alpha and notes.txt
     CHECK(matches == 3);
-    const auto regex = SearchPanel::run(index->files(), {"^#+ (Goals|Beta)$", true, true}, nullptr);
+    const auto regex = SearchPanel::run(index->files(), {"^#+ (Goals|Beta)$", true, true, {}}, nullptr);
     CHECK(regex.size() == 2);
-    CHECK(SearchPanel::run(index->files(), {"IDEA", true, false}, nullptr).isEmpty());
+    CHECK(SearchPanel::run(index->files(), {"IDEA", true, false, {}}, nullptr).isEmpty());
 
     SearchPanel panel(index.get());
     panel.showTag("proj");
