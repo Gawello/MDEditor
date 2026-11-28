@@ -18,6 +18,7 @@
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/Completions.h"
+#include "markdown/LinkRewrite.h"
 #include "notes/NoteEdits.h"
 #include "notes/NoteIndex.h"
 #include "notes/Templates.h"
@@ -2057,6 +2058,17 @@ bool MainWindow::relocate(const QString &path, const QString &target, const QStr
         if (FileActions::isSameOrInside(tab->filePath(), path))
             tab->setFilePath(result.path + tab->filePath().mid(QDir::cleanPath(path).size()));
     }
+    // Links follow too. The index still knows the old paths: it says who links where.
+    const QString oldClean = QDir::cleanPath(path);
+    if (!m_index->root().isEmpty() && FileActions::isSameOrInside(oldClean, m_index->root()) && oldClean != m_index->root()) {
+        QHash<QString, QString> moved;
+        for (const QString &file : m_index->files()) {
+            if (file == oldClean || file.startsWith(oldClean + u'/'))
+                moved.insert(file, result.path + file.mid(oldClean.size()));
+        }
+        updateLinksAfterMove(moved);
+        m_index->refresh();
+    }
     if (FileActions::isSameOrInside(m_folderPanel->rootPath(), path))
         m_folderPanel->setRootPath(result.path + m_folderPanel->rootPath().mid(QDir::cleanPath(path).size()));
     if (RecentFiles::list().contains(path)) {
@@ -2072,6 +2084,127 @@ bool MainWindow::relocate(const QString &path, const QString &target, const QStr
     updateWindowTitle();
     m_folderPanel->selectFile(result.path);
     return true;
+}
+
+void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved)
+{
+    const QString mode = AppSettings::instance().updateLinks();
+    if (moved.isEmpty() || mode == u"never")
+        return;
+
+    // Names after the move, to know when a bare [[Name]] is still enough.
+    QHash<QString, int> nameCounts;
+    for (const NoteIndex::FileEntry &entry : m_index->entries()) {
+        const QFileInfo now(moved.value(entry.path, entry.path));
+        ++nameCounts[(entry.note ? now.completeBaseName() : now.fileName()).toLower()];
+    }
+    const QDir root(m_index->root());
+    const auto wikiTarget = [&](const QString &written, const QString &oldTarget, const QString &newTarget) {
+        const bool note = MarkdownEditor::isMarkdownFile(newTarget);
+        QString writtenName = QFileInfo(written).fileName();
+        if (note && writtenName.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+            writtenName.chop(3);
+        const QString oldName = note ? QFileInfo(oldTarget).completeBaseName() : QFileInfo(oldTarget).fileName();
+        if (writtenName.compare(oldName, Qt::CaseInsensitive) != 0)
+            return written; // found through an alias, which moves with the note
+        const QFileInfo now(newTarget);
+        const QString name = note ? now.completeBaseName() : now.fileName();
+        QString result = name;
+        if (nameCounts.value(name.toLower()) > 1 || !FileActions::isSameOrInside(newTarget, root.path())) {
+            result = root.relativeFilePath(newTarget); // another file has that name: the path tells them apart
+            if (note)
+                result.chop(now.suffix().size() + 1);
+        }
+        if (note && written.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+            result += QStringLiteral(".md");
+        return result;
+    };
+
+    struct Plan {
+        QString path; // where the note is now
+        QHash<std::pair<QString, bool>, QString> targets; // (as written, wiki) -> new target
+    };
+    QList<Plan> plans;
+    int linkCount = 0;
+    QSet<QString> notes;
+    for (auto it = moved.cbegin(); it != moved.cend(); ++it) {
+        for (const NoteIndex::Backlink &link : m_index->backlinks(it.key()))
+            notes.insert(link.source);
+        if (MarkdownEditor::isMarkdownFile(it.key()))
+            notes.insert(it.key()); // its own relative links may change
+    }
+    for (const QString &oldFrom : std::as_const(notes)) {
+        const auto note = m_index->notes().value(oldFrom);
+        if (!note)
+            continue;
+        const QString newFrom = moved.value(oldFrom, oldFrom);
+        Plan plan{newFrom, {}};
+        for (const md::NoteLink &link : note->scan.links) {
+            const QString written = QString::fromStdU16String(link.target);
+            const QString oldTarget = m_index->resolveIndexed(written, link.wiki, oldFrom);
+            if (oldTarget.isEmpty())
+                continue;
+            const QString newTarget = moved.value(oldTarget, oldTarget);
+            if (newTarget == oldTarget && newFrom == oldFrom)
+                continue;
+            const QString replacement = link.wiki ? wikiTarget(written, oldTarget, newTarget)
+                                                  : QFileInfo(newFrom).dir().relativeFilePath(newTarget);
+            const QString current = link.wiki ? written : QUrl::fromPercentEncoding(written.toUtf8());
+            if (replacement == current)
+                continue;
+            plan.targets.insert({written, link.wiki}, replacement); // one entry for every link written alike
+            ++linkCount;
+        }
+        if (!plan.targets.isEmpty())
+            plans.append(plan);
+    }
+    if (plans.isEmpty())
+        return;
+
+    if (mode != u"always") {
+        QMessageBox box(QMessageBox::Question, tr("Update Links"),
+                        plans.size() == 1 ? tr("Update the links in “%1” to match?").arg(QFileInfo(plans[0].path).completeBaseName())
+                                          : tr("Update the links in %1 notes to match?").arg(plans.size()),
+                        QMessageBox::NoButton, this);
+        box.setInformativeText(linkCount == 1 ? tr("1 link points to the old name or place.")
+                                              : tr("%1 links point to the old name or place.").arg(linkCount));
+        QPushButton *update = box.addButton(tr("Update Links"), QMessageBox::AcceptRole);
+        box.addButton(tr("Don't Update"), QMessageBox::RejectRole);
+        box.setDefaultButton(update);
+        auto *remember = new QCheckBox(tr("Don't ask again"), &box);
+        box.setCheckBox(remember);
+        box.exec();
+        const bool yes = box.clickedButton() == update;
+        if (remember->isChecked())
+            AppSettings::instance().setValue(QString::fromLatin1(AppSettings::updateLinksKey),
+                                             yes ? QStringLiteral("always") : QStringLiteral("never"));
+        if (!yes)
+            return;
+    }
+
+    QList<std::pair<QString, std::function<std::optional<QString>(const QString &)>>> changes;
+    for (const Plan &plan : std::as_const(plans)) {
+        changes.append({plan.path, [targets = plan.targets](const QString &text) -> std::optional<QString> {
+            const std::u16string result = md::rewriteLinks(text.toStdU16String(), [&targets](const md::LinkToRewrite &link)
+                                                               -> std::optional<std::u16string> {
+                const auto it = targets.constFind({QString::fromStdU16String(link.target), link.wiki});
+                if (it == targets.cend())
+                    return std::nullopt;
+                QString value = *it;
+                if (!link.wiki && !link.angle) { // what would end or break a Markdown link target
+                    value.replace(u'%', QStringLiteral("%25")).replace(u' ', QStringLiteral("%20"));
+                    value.replace(u'(', QStringLiteral("%28")).replace(u')', QStringLiteral("%29"));
+                }
+                return value.toStdU16String();
+            });
+            return QString::fromStdU16String(result);
+        }});
+    }
+    const QStringList failures = changeNotes(changes);
+    if (!failures.isEmpty())
+        QMessageBox::warning(this, tr("Update Links"), tr("Some links couldn't be updated:\n%1").arg(failures.join(u'\n')));
+    else
+        statusBar()->showMessage(linkCount == 1 ? tr("Updated 1 link") : tr("Updated %1 links").arg(linkCount), 5000);
 }
 
 void MainWindow::deletePath(const QString &path)

@@ -87,7 +87,7 @@ any text file can be edited, not just Markdown.
 | Block references `^id` and `[[Note#^id]]` | ❌ | | P2 | M |
 | Aliases (`[[Note\|alias]]`, `aliases:` property) | ✅ | Links and the quick switcher find notes by alias | | |
 | Click a link to a missing note to create it | ✅ | Created next to the current note; unresolved links aren't dimmed yet | | |
-| Update links when a file is renamed or moved | ❌ | Ask or update automatically, as in Obsidian | P1 | M |
+| Update links when a file is renamed or moved | ✅ | Ask / always / never; folders too; open and closed notes | | |
 | Rename a heading and update the links to it | ❌ | Right-click "Rename this heading…" | P2 | M |
 | Link right-click: open in new tab / to the right / in new window; act on the target (rename, move, bookmark, reveal) | 🟡 | Open, to the right, copy address and path, reveal, rename; no move/bookmark | P3 | S |
 | New link format option (shortest / relative / absolute), wiki or Markdown links | ❌ | | P2 | S |

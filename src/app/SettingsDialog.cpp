@@ -164,6 +164,22 @@ QWidget *SettingsDialog::createNotesPage()
                               "template if needed. Formats use Obsidian's tokens: YYYY, MM, DD, dddd, HH, mm; text in "
                               "[brackets] is kept as is.")));
 
+    layout->addWidget(heading(tr("Links")));
+    auto *links = new QFormLayout;
+    auto *updateLinks = new QComboBox(page);
+    updateLinks->addItem(tr("Ask"), QStringLiteral("ask"));
+    updateLinks->addItem(tr("Always"), QStringLiteral("always"));
+    updateLinks->addItem(tr("Never"), QStringLiteral("never"));
+    updateLinks->setCurrentIndex(std::max(0, updateLinks->findData(settings.updateLinks())));
+    connect(updateLinks, &QComboBox::currentIndexChanged, this, [updateLinks] {
+        AppSettings::instance().setValue(QString::fromLatin1(AppSettings::updateLinksKey), updateLinks->currentData());
+    });
+    links->addRow(tr("Update links after a rename or move"), updateLinks);
+    layout->addLayout(links);
+    layout->addWidget(hint(tr("When a note or folder in the open folder is renamed or moved, the [[links]] and "
+                              "Markdown links pointing to it, and the relative links of the notes it holds, can be "
+                              "changed to match.")));
+
     layout->addWidget(heading(tr("Templates")));
     auto *templates = new QFormLayout;
     templates->addRow(tr("Templates folder"),

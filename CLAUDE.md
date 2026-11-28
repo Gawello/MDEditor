@@ -193,6 +193,11 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   mentions. The app changes other notes only through `MainWindow::changeNotes`: an open tab gets a minimal edit
   (`MarkdownEditor::applyText`, one undo step) and is saved without hooks if it had no unsaved changes; a closed
   file goes through `NoteEdits::applyToFile` (Document read/encode/write, no format-on-save or plugins).
+- Renames and moves (`MainWindow::relocate`) call `updateLinksAfterMove` with old → new paths, before the index is
+  refreshed: the index still knows who links where. It plans per note ((target as written, wiki) → new target),
+  asks per `notes/updateLinks`, then `changeNotes` runs `md::rewriteLinks` (Qt-free, keeps anchors, aliases,
+  code and everything else byte for byte) on each. Bare `[[Name]]` stays bare while the name is unique; links that
+  found the note by an alias are left alone; Markdown links get new relative paths (spaces as %20).
 - Page preview: Ctrl+hover (350 ms) → `MarkdownEditor::previewLink` → `NotePreview` (a `Qt::ToolTip` QTextBrowser
   that closes when the mouse leaves it and the link's line). `MarkdownEditor::excerpt` (front matter off, a section
   or block, `[[links]]` as text) feeds both previews and embeds. Tool-tip windows need `WA_StyledBackground` for

@@ -43,6 +43,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   their lines, and unlinked mentions of its name or aliases with a Link button that turns one into a `[[link]]`
   (closed notes are changed on disk with their own encoding and line endings). View → Outgoing Links lists this
   note's links, those to notes not created yet apart. Ctrl+hover over a link previews the note
+- Renaming or moving a note or folder in the open folder updates the links to it (and the relative links of the
+  notes it holds): asked first by default, or always / never (Settings → Notes)
 - Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,
   `[[Note#^` its block ids, `#ta` the tags in use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent

@@ -34,6 +34,7 @@ public:
     static constexpr auto dailyFormatKey = "notes/dailyFormat";     // moment.js tokens, like Obsidian
     static constexpr auto dailyTemplateKey = "notes/dailyTemplate"; // a note used as the template
     static constexpr auto templatesFolderKey = "notes/templatesFolder";
+    static constexpr auto updateLinksKey = "notes/updateLinks"; // after a rename or move: "ask", "always", "never"
     static constexpr auto checkUpdatesOnStartKey = "updates/checkOnStart";
     static constexpr auto lastUpdateCheckKey = "updates/lastCheck"; // UTC
     static constexpr auto skippedUpdateKey = "updates/skippedVersion";
@@ -51,6 +52,7 @@ public:
     QString dailyFormat() const { return value(dailyFormatKey, QStringLiteral("YYYY-MM-DD")).toString(); }
     QString dailyTemplate() const { return value(dailyTemplateKey).toString(); }
     QString templatesFolder() const { return value(templatesFolderKey, QStringLiteral("templates")).toString(); }
+    QString updateLinks() const { return value(updateLinksKey, QStringLiteral("ask")).toString(); }
     bool checkUpdatesOnStart() const { return value(checkUpdatesOnStartKey, false).toBool(); } // off: asks GitHub
     QStringList enabledPlugins() const { return value(enabledPluginsKey).toStringList(); }
 

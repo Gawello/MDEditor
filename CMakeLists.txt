@@ -23,6 +23,7 @@ add_library(mdcore STATIC
     src/markdown/LineStyle.cpp
     src/markdown/NoteScan.cpp
     src/markdown/Completion.cpp
+    src/markdown/LinkRewrite.cpp
     src/markdown/TableEdit.cpp
     src/markdown/TableParser.cpp
     src/syntax/Syntax.cpp

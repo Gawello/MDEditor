@@ -279,7 +279,7 @@ settings in new window ➖.
 | Default location for new notes (root / same folder / given folder) | ❌ |
 | Default location for new attachments (root / same folder / subfolder / given folder) | 🟡 subfolder |
 | New link format (shortest / relative / absolute) | ❌ |
-| Automatically update internal links | ❌ |
+| Automatically update internal links | ✅ (ask / always / never) |
 | Use [[Wikilinks]] | ❌ |
 | Show all file types | ✅ |
 | Confirm before deleting files | ✅ |

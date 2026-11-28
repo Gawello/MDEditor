@@ -89,6 +89,9 @@ private:
     void movePath(const QString &path, const QString &folder);
     // Renames or moves `path` to `target`, with tabs, the root folder, recent files and bookmarks following it.
     bool relocate(const QString &path, const QString &target, const QString &title);
+    // After a rename or move (old path -> new path for every file that moved): the links to them, and the
+    // relative links of moved notes, are updated (asking first, per Settings → Notes).
+    void updateLinksAfterMove(const QHash<QString, QString> &moved);
     void deletePath(const QString &path);
     void newNote(const QString &folder);
     void newFolder(const QString &folder);
