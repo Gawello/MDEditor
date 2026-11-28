@@ -376,6 +376,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Plugin `QJSEngine`s must be destroyed before `QApplication` (`PluginManager::shutdown()` in `main`), and a
   `QJSValue` must not outlive its engine (in `PluginManager::Plugin` the engine is declared before the
   `QJSValue` members, so it is destroyed after them).
+- Detached background threads (`runInBackground`) can outlive `main()`: what they call must not touch statics that
+  are destroyed at exit (function-local `static QStringList` and the like: make them `*new …`, never destroyed) or
+  shared state (pass values in, e.g. `Snapshots` takes the folder). Windows CI crashed intermittently at exit.
 - A background result arrives through the event queue: the worker can be done while its `finished` signal still
   waits. `NoteIndex::scanning()` is a flag cleared when the result is taken in (not `QFutureWatcher::isRunning()`),
   and `runInBackground` starts its promise before the thread, so a fresh future reports "running" at once.

@@ -30,7 +30,8 @@ bool searchable(const QString &path)
 {
     const QFileInfo info(path);
     const QString suffix = info.suffix().toLower();
-    static const QStringList text{"txt", "log", "csv", "tsv", "rst", "adoc", "org", "tex", "bib"};
+    // Never destroyed: searches run on detached threads that may outlive main().
+    static const QStringList &text = *new QStringList{"txt", "log", "csv", "tsv", "rst", "adoc", "org", "tex", "bib"};
     return MarkdownEditor::isMarkdownFile(path) || text.contains(suffix)
         || syntax::languageForFileName(std::u16string_view(reinterpret_cast<const char16_t *>(info.fileName().utf16()),
                                                            size_t(info.fileName().size())))

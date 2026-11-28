@@ -293,7 +293,8 @@ bool MarkdownEditor::isMarkdownFile(const QString &path)
 {
     if (path.isEmpty())
         return true; // a new note
-    static const QStringList suffixes{"md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"};
+    // Never destroyed: index scans and searches call this on detached threads that may outlive main().
+    static const QStringList &suffixes = *new QStringList{"md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"};
     return suffixes.contains(QFileInfo(path).suffix().toLower());
 }
 

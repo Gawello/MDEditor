@@ -87,7 +87,7 @@ UINT codePage(const QString &encoding)
         if (ok && number >= 874 && number <= 1258 && IsValidCodePage(number))
             return number;
     }
-    static const QHash<QString, UINT> pages{
+    static const QHash<QString, UINT> &pages = *new QHash<QString, UINT>{ // never destroyed: used off the GUI thread
         {QStringLiteral("iso-8859-1"), 28591},  {QStringLiteral("iso-8859-2"), 28592},
         {QStringLiteral("iso-8859-3"), 28593},  {QStringLiteral("iso-8859-4"), 28594},
         {QStringLiteral("iso-8859-5"), 28595},  {QStringLiteral("iso-8859-6"), 28596},
@@ -156,8 +156,9 @@ QString normalized(const QString &encoding)
 {
     // Hunspell dictionaries and old files name encodings loosely: "ISO8859-2", "microsoft-cp1251", "CP1250".
     const QString lower = encoding.trimmed().toLower();
-    static const QRegularExpression iso(QStringLiteral(R"(^iso[-_ ]?8859[-_ ](\d+)$)"));
-    static const QRegularExpression windows(QStringLiteral(R"(^(?:microsoft-cp|windows-|cp)(12\d\d)$)"));
+    // Never destroyed: files are read on detached threads that may outlive main().
+    static const QRegularExpression &iso = *new QRegularExpression(QStringLiteral(R"(^iso[-_ ]?8859[-_ ](\d+)$)"));
+    static const QRegularExpression &windows = *new QRegularExpression(QStringLiteral(R"(^(?:microsoft-cp|windows-|cp)(12\d\d)$)"));
     if (const auto match = iso.match(lower); match.hasMatch())
         return QStringLiteral("ISO-8859-") + match.captured(1);
     if (const auto match = windows.match(lower); match.hasMatch())
@@ -181,7 +182,7 @@ bool isSupported(const QString &encoding)
 
 QStringList common()
 {
-    static const QStringList candidates{
+    static const QStringList &candidates = *new QStringList{ // never destroyed: used off the GUI thread
         QStringLiteral("UTF-8"),        QStringLiteral("UTF-16LE"),     QStringLiteral("UTF-16BE"),
         QStringLiteral("windows-1250"), QStringLiteral("ISO-8859-2"),   QStringLiteral("IBM852"),
         QStringLiteral("windows-1252"), QStringLiteral("ISO-8859-1"),   QStringLiteral("ISO-8859-15"),

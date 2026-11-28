@@ -7,8 +7,9 @@
 
 namespace {
 
-const QStringList operators{"path:", "file:", "tag:", "content:", "line:", "section:", "block:", "task:", "task-todo:",
-                            "task-done:", "match-case:", "ignore-case:"};
+// Never destroyed: queries run on detached threads that may outlive main().
+const QStringList &operators = *new QStringList{"path:", "file:", "tag:", "content:", "line:", "section:", "block:", "task:",
+                                                "task-todo:", "task-done:", "match-case:", "ignore-case:"};
 
 // Splits into tokens: words, "quoted phrases", (groups) kept whole with their prefix.
 QStringList tokenize(const QString &text)
@@ -93,7 +94,7 @@ SearchQuery SearchQuery::parse(const QString &text, Qt::CaseSensitivity defaultC
             continue;
         }
         Kind kind = Kind::Text;
-        static const QList<std::pair<QString, Kind>> kinds{
+        static const QList<std::pair<QString, Kind>> &kinds = *new QList<std::pair<QString, Kind>>{
             {"path:", Kind::Path}, {"file:", Kind::File}, {"tag:", Kind::Tag}, {"content:", Kind::Content},
             {"line:", Kind::Line}, {"section:", Kind::Section}, {"block:", Kind::Block}, {"task-todo:", Kind::TaskTodo},
             {"task-done:", Kind::TaskDone}, {"task:", Kind::Task}};

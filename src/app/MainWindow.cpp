@@ -282,8 +282,8 @@ MainWindow::MainWindow(QWidget *parent)
     Hotkeys::instance().registerMenus(menuBar()); // shortcuts changed in Settings → Hotkeys
     qApp->installEventFilter(new SideButtonFilter(this, [this](bool forward) { showPlace(forward); }));
     // Version history: copies older than the setting go (in the background, it's a folder walk).
-    runInBackground([days = AppSettings::instance().snapshotDays()] {
-        Snapshots::prune(days);
+    runInBackground([days = AppSettings::instance().snapshotDays(), base = Snapshots::root()] {
+        Snapshots::prune(days, {}, base);
         return true;
     });
     statusBar()->setSizeGripEnabled(false);
@@ -2166,8 +2166,9 @@ void MainWindow::recordSnapshot(EditorTab *tab, bool force)
     if (!tab || tab->isUntitled() || !settings.snapshots() || !MarkdownEditor::isMarkdownFile(tab->filePath()))
         return;
     // Fire and forget: the app's own data folder, a small file.
-    runInBackground([path = tab->filePath(), text = tab->editor()->markdown(), minutes = settings.snapshotMinutes(), force] {
-        return Snapshots::record(path, text, minutes, force);
+    runInBackground([path = tab->filePath(), text = tab->editor()->markdown(), minutes = settings.snapshotMinutes(), force,
+                     base = Snapshots::root()] {
+        return Snapshots::record(path, text, minutes, force, {}, base);
     });
 }
 
@@ -2177,7 +2178,8 @@ void MainWindow::showVersionHistory(EditorTab *tab)
         statusBar()->showMessage(tr("Save the note first: versions are kept for saved notes"), 5000);
         return;
     }
-    const auto entries = runAndWait([path = tab->filePath()] { return Snapshots::list(path); }, tr("Reading versions…"), this);
+    const auto entries = runAndWait([path = tab->filePath(), base = Snapshots::root()] { return Snapshots::list(path, base); },
+                                    tr("Reading versions…"), this);
     if (!entries)
         return;
     VersionHistoryDialog dialog(tab->filePath(), *entries, this);
