@@ -68,6 +68,7 @@ QList<Suggestion> suggest(const NoteIndex &index, const md::CompletionContext &c
 
     switch (context.kind) {
     case md::CompletionKind::None:
+    case md::CompletionKind::Command: // the window's
         return {};
     case md::CompletionKind::Note: {
         // Score everything, but build only the suggestions that will be shown: this runs on every key.

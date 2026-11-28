@@ -191,8 +191,11 @@ MainWindow::MainWindow(QWidget *parent)
                                                                           const QString &from) {
         return index ? index->resolve(target, wiki, from) : QString();
     });
-    MarkdownEditor::setCompletionProvider([index = QPointer<NoteIndex>(m_index)](const md::CompletionContext &context,
-                                                                                const QString &from, const QString &text) {
+    MarkdownEditor::setCompletionProvider([window = QPointer<MainWindow>(this), index = QPointer<NoteIndex>(m_index)](
+                                              const md::CompletionContext &context, const QString &from, const QString &text) {
+        if (context.kind == md::CompletionKind::Command)
+            return window && AppSettings::instance().slashCommands() ? window->slashCommands(QString::fromStdU16String(context.query))
+                                                                     : QList<CompletionItem>();
         return index ? Completions::suggest(*index, context, from, text) : QList<CompletionItem>();
     });
 
@@ -457,10 +460,11 @@ void MainWindow::createMenus()
     go->addSeparator();
     QMenu *tabsMenu = go->addMenu(tr("Go to &Tab"));
     for (int i = 0; i < 8; ++i) {
-        tabsMenu->addAction(tr("Tab &%1").arg(i + 1), QKeySequence(Qt::CTRL | Qt::Key(Qt::Key_1 + i)), this,
+        // Full names: the command palette and slash commands list them without the menu around them.
+        tabsMenu->addAction(tr("Go to Tab &%1").arg(i + 1), QKeySequence(Qt::CTRL | Qt::Key(Qt::Key_1 + i)), this,
                            [this, i] { goToTab(i); });
     }
-    tabsMenu->addAction(tr("&Last Tab"), QKeySequence(Qt::CTRL | Qt::Key_9), this, [this] { goToTab(-1); });
+    tabsMenu->addAction(tr("Go to &Last Tab"), QKeySequence(Qt::CTRL | Qt::Key_9), this, [this] { goToTab(-1); });
     updateHistoryActions();
 
     m_pluginsMenu = menuBar()->addMenu(tr("&Plugins"));
@@ -1523,6 +1527,12 @@ void MainWindow::showQuickSwitcher()
 void MainWindow::showCommandPalette()
 {
     PaletteDialog dialog(this, tr("Type a command…"));
+    dialog.setItems(commandItems());
+    dialog.choose();
+}
+
+QList<PaletteDialog::Item> MainWindow::commandItems()
+{
     QList<PaletteDialog::Item> items;
     std::function<void(QMenu *, const QString &)> collect = [&](QMenu *menu, const QString &path) {
         emit menu->aboutToShow(); // menus that fill or update themselves when opened
@@ -1548,8 +1558,34 @@ void MainWindow::showCommandPalette()
         if (QMenu *menu = action->menu())
             collect(menu, action->text().remove(u'&'));
     }
-    dialog.setItems(items);
-    dialog.choose();
+    return items;
+}
+
+QList<CompletionItem> MainWindow::slashCommands(const QString &query)
+{
+    struct Ranked {
+        int score;
+        int order;
+        PaletteDialog::Item item;
+    };
+    QList<Ranked> ranked;
+    const QList<PaletteDialog::Item> items = commandItems();
+    for (int i = 0; i < items.size(); ++i) {
+        const int own = PaletteDialog::score(query, items[i].text);
+        const int withMenu = PaletteDialog::score(query, items[i].detail + u' ' + items[i].text);
+        const int score = std::max(own, withMenu < 0 ? -1 : withMenu / 2);
+        if (score >= 0)
+            ranked.append({score, i, items[i]});
+    }
+    std::stable_sort(ranked.begin(), ranked.end(), [](const Ranked &a, const Ranked &b) { return a.score > b.score; });
+    QList<CompletionItem> result;
+    for (const Ranked &entry : std::as_const(ranked)) {
+        if (result.size() >= Completions::maxSuggestions)
+            break;
+        result.append({entry.item.text, entry.item.shortcut.isEmpty() ? entry.item.detail : entry.item.shortcut, QString(),
+                       entry.item.run});
+    }
+    return result;
 }
 
 void MainWindow::toggleSidePage(QWidget *page)

@@ -59,7 +59,7 @@ any text file can be edited, not just Markdown.
 | Spell checking | ✅ | Hunspell, several languages | | |
 | Multiple cursors (Alt+click, Ctrl+D…) | ❌ | Hard in QPlainTextEdit | P3 | L |
 | Vim key bindings | ❌ | | P3 | L |
-| Slash commands (`/` menu in the text) | ❌ | Reuse the command palette | P2 | S |
+| Slash commands (`/` menu in the text) | ✅ | The menu commands | | |
 | Convert pasted HTML to Markdown | ✅ | Paste and drop; Ctrl+Shift+V pastes plain text | | |
 | Paste and drop images (saved as attachments) | ✅ | | | |
 | Drop files to link them | ✅ | Notes as [[links]], other files as relative links | | |

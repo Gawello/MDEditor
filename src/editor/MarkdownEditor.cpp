@@ -681,11 +681,21 @@ void MarkdownEditor::acceptCompletion(int row)
     const int end = cursor.position();
     if (m_completionStart < 0 || m_completionStart > end || cursor.block() != document()->findBlock(m_completionStart))
         return;
+    if (item.run) { // a slash command: "/query" goes, then the command runs (after the key event is done)
+        cursor.setPosition(m_completionStart - 1);
+        cursor.setPosition(end, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+        setTextCursor(cursor);
+        m_completionStart = -1;
+        QMetaObject::invokeMethod(this, item.run, Qt::QueuedConnection);
+        return;
+    }
     cursor.beginEditBlock();
     cursor.setPosition(m_completionStart);
     cursor.setPosition(end, QTextCursor::KeepAnchor);
     cursor.insertText(item.insert);
-    if (m_completionContext.kind != md::CompletionKind::Tag) {
+    if (m_completionContext.kind == md::CompletionKind::Note || m_completionContext.kind == md::CompletionKind::Heading
+        || m_completionContext.kind == md::CompletionKind::Block) {
         // Past the closing brackets, adding them if they aren't there yet.
         if (m_completionContext.closed)
             cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 2);

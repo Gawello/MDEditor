@@ -4,13 +4,25 @@
 #include <QString>
 #include <QWidget>
 
+#include <functional>
+
 class QListWidget;
 
 // One suggestion for what's being typed in the editor.
 struct CompletionItem {
+    CompletionItem() = default;
+    CompletionItem(QString label, QString detail, QString insert, std::function<void()> run = {})
+        : label(std::move(label))
+        , detail(std::move(detail))
+        , insert(std::move(insert))
+        , run(std::move(run))
+    {
+    }
+
     QString label;  // shown
     QString detail; // shown dimmed on the right
     QString insert; // replaces what was typed
+    std::function<void()> run; // a command: what was typed (with its "/") goes, then this runs
 };
 
 // The list of suggestions under the cursor ([[links]], #tags). A frameless tool-tip window that never takes

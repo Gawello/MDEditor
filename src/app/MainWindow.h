@@ -1,6 +1,8 @@
 #pragma once
 
 #include "app/NavigationHistory.h"
+#include "app/PaletteDialog.h"
+#include "editor/CompletionPopup.h"
 
 #include <QMainWindow>
 #include <QPointer>
@@ -123,6 +125,11 @@ private:
     // Obsidian's navigation: quick switcher (Ctrl+O), command palette (Ctrl+P), the right sidebar.
     void showQuickSwitcher();
     void showCommandPalette();
+    // Every enabled menu command, for the palette and the slash commands.
+    QList<PaletteDialog::Item> commandItems();
+public:
+    QList<CompletionItem> slashCommands(const QString &query); // "/query" in the editor
+private:
     void toggleSidePage(QWidget *page); // shows the sidebar on `page`, or hides it if it's showing it already
     // Opens `path` and selects [column, column + length) on `line` (0-based).
     void openAt(const QString &path, int line, int column, int length);

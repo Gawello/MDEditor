@@ -189,7 +189,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   index entries (`NoteIndex::entries()`: name and folder worked out once per scan; it runs on every key, ~30 ms for
   20k notes in a debug build); `CompletionPopup` is a `Qt::ToolTip` window that never takes the focus, the editor
   forwards ↑↓/Enter/Tab/Esc to it (`keyPressEvent`) and re-evaluates after each typed key and cursor move.
-  `MarkdownEditor::setCompletionProvider` is static, like the link resolver.
+  `MarkdownEditor::setCompletionProvider` is static, like the link resolver. Slash commands are the `Command` kind:
+  the window answers with `MainWindow::slashCommands` (the palette's `commandItems`), an item with `run` removes
+  "/query" and runs the command queued. Menu entries are listed without their menu, so name them fully.
 - Backlinks: `NoteIndex::backlinks` (built lazily after each change with `resolveIndexed`, which checks the index's
   file set instead of the disk); `BacklinksPanel::collect` (background) reads the linking lines and finds unlinked
   mentions. The app changes other notes only through `MainWindow::changeNotes`: an open tab gets a minimal edit

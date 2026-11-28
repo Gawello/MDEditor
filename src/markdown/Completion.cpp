@@ -65,6 +65,22 @@ CompletionContext completionAt(std::u16string_view line, int cursor)
         return context;
     }
 
+    // "/command": a '/' at the start of the line or after a space, then anything but spaces and slashes (so
+    // paths and "and/or" don't count).
+    {
+        int slash = cursor;
+        while (slash > 0 && !isSpace(before[slash - 1]) && before[slash - 1] != u'/')
+            --slash;
+        if (slash > 0 && before[slash - 1] == u'/' && (slash == 1 || isSpace(before[slash - 2]))) {
+            if (inInlineCode(line, cursor))
+                return context;
+            context.kind = CompletionKind::Command;
+            context.start = slash;
+            context.query = std::u16string(before.substr(slash));
+            return context;
+        }
+    }
+
     // "#tag": a '#' at the start of the line or after a space, then tag characters up to the cursor. At least
     // one of them, so typing a heading ("# ") doesn't flash a list.
     int start = cursor;

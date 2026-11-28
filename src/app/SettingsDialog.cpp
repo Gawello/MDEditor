@@ -458,6 +458,8 @@ QWidget *SettingsDialog::createEditorPage()
     form->addRow(QString(), toggle(tr("Turn formatted text pasted from web pages and documents into Markdown "
                                       "(Ctrl+Shift+V pastes plain text)"),
                                    AppSettings::convertPastedHtmlKey, AppSettings::instance().convertPastedHtml()));
+    form->addRow(QString(), toggle(tr("Slash commands: “/” at the start of a line or after a space lists the commands"),
+                                   AppSettings::slashCommandsKey, AppSettings::instance().slashCommands()));
 
     layout->addLayout(form);
     layout->addWidget(hint(tr("Pasted images are saved in this folder, next to the note.")));

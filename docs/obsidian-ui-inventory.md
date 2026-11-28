@@ -69,7 +69,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 | `[[^^` | Blocks of all notes | ❌ |
 | `[[Note\|` | Display text suggestion | ❌ |
 | `#` | Existing tags | ✅ |
-| `/` (Slash commands) | Every command, filtered as you type, with shortcuts | ❌ |
+| `/` (Slash commands) | Every command, filtered as you type, with shortcuts | ✅ |
 | Ctrl+hover on a link | Page preview: the note rendered in a popover, scrollable, editable | 🟡 read-only |
 
 ## 3. File explorer (left sidebar)

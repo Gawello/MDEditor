@@ -68,3 +68,17 @@ TEST_CASE(note_scan_finds_block_ids)
         CHECK(scan.blocks[2].id == u"tbl" && scan.blocks[2].text == u"|---|" && scan.blocks[2].line == 6);
     }
 }
+
+TEST_CASE(completion_finds_slash_commands)
+{
+    CompletionContext c = at(u"/he|");
+    CHECK(c.kind == CompletionKind::Command && c.query == u"he" && c.start == 1);
+    c = at(u"text /|");
+    CHECK(c.kind == CompletionKind::Command && c.query.empty() && c.start == 6);
+    CHECK(at(u"and/or|").kind == CompletionKind::None);
+    CHECK(at(u"/usr/bin|").kind == CompletionKind::None);
+    CHECK(at(u"/done now|").kind == CompletionKind::None); // a space ends it
+    CHECK(at(u"`/x|`").kind == CompletionKind::None);
+    CHECK(at(u"[[a/b|").kind == CompletionKind::Note);
+    CHECK(at(u"https://x|").kind == CompletionKind::None);
+}

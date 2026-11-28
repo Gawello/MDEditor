@@ -4,10 +4,11 @@
 #include <string_view>
 
 // What is being typed at the cursor that the editor can complete, like Obsidian's suggestions: a note name
-// after "[[" (or "![["), a heading after "[[Note#", a block after "[[Note#^", a tag after "#".
+// after "[[" (or "![["), a heading after "[[Note#", a block after "[[Note#^", a tag after "#", a command after
+// "/" at the start of the line or after a space (Obsidian's slash commands).
 namespace md {
 
-enum class CompletionKind { None, Note, Heading, Block, Tag };
+enum class CompletionKind { None, Note, Heading, Block, Tag, Command };
 
 struct CompletionContext {
     CompletionKind kind = CompletionKind::None;

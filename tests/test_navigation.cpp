@@ -277,15 +277,15 @@ TEST_CASE(go_to_tab_by_number)
     CHECK(window.openFile(notes.a));
     CHECK(window.openFile(notes.b));
     CHECK(window.openFile(notes.c));
-    action(window, QStringLiteral("Tab 1"))->trigger();
+    action(window, QStringLiteral("Go to Tab 1"))->trigger();
     CHECK(pane(window)->currentIndex() == 0);
-    action(window, QStringLiteral("Last Tab"))->trigger();
+    action(window, QStringLiteral("Go to Last Tab"))->trigger();
     CHECK(pane(window)->currentIndex() == 2);
-    action(window, QStringLiteral("Tab 2"))->trigger();
+    action(window, QStringLiteral("Go to Tab 2"))->trigger();
     CHECK(pane(window)->currentIndex() == 1);
-    action(window, QStringLiteral("Tab 5"))->trigger(); // no such tab: nothing happens
+    action(window, QStringLiteral("Go to Tab 5"))->trigger(); // no such tab: nothing happens
     CHECK(pane(window)->currentIndex() == 1);
-    CHECK(action(window, QStringLiteral("Tab 1"))->shortcut() == QKeySequence(Qt::CTRL | Qt::Key_1));
+    CHECK(action(window, QStringLiteral("Go to Tab 1"))->shortcut() == QKeySequence(Qt::CTRL | Qt::Key_1));
     closeQuietly(window);
 }
 

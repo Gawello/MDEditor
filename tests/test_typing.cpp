@@ -1,5 +1,7 @@
 #include "TestHarness.h"
 #include "app/AppSettings.h"
+#include "app/MainWindow.h"
+#include "editor/CompletionPopup.h"
 #include "editor/MarkdownEditor.h"
 #include "markdown/LineStyle.h"
 
@@ -10,6 +12,7 @@
 #include <QFile>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QUrl>
 #include <QMimeData>
@@ -355,4 +358,30 @@ TEST_CASE(search_for_the_selection)
     menu = editor.createContextMenu(editor.cursorRect().center());
     for (QAction *action : menu->actions())
         CHECK(!action->text().startsWith(QStringLiteral("&Search for")));
+}
+
+TEST_CASE(slash_commands_run_menu_commands)
+{
+    QSettings().remove(QStringLiteral("session"));
+    QSettings().remove(QStringLiteral("window"));
+    MainWindow window;
+    window.show();
+    auto *editor = window.findChild<MarkdownEditor *>();
+    CHECK(editor != nullptr);
+    if (!editor)
+        return;
+    editor->setFocus();
+    type(*editor, "x /bol");
+    CHECK(editor->completionPopup() && editor->completionPopup()->isVisible());
+    CHECK(editor->completionPopup() && editor->completionPopup()->items().value(0).label == "Bold");
+    key(*editor, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    CHECK(shown(*editor) == "x **|**"); // "/bol" went, then Format → Bold ran
+    // Turned off: no list.
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::slashCommandsKey), false);
+    type(*editor, " /bol");
+    CHECK(!editor->completionPopup()->isVisible());
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::slashCommandsKey), true);
+    editor->document()->setModified(false);
+    window.close();
 }
