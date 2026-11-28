@@ -125,7 +125,7 @@ any text file can be edited, not just Markdown.
 | Search in the folder | ✅ | Text, match case, regex, tag results | | |
 | Search operators (`path:`, `file:`, `tag:`, `line:`, `section:`, `block:`, `task:`, `[property:value]`) | ❌ | | P2 | M |
 | Explain search, sort results, more context, copy results | ❌ | | P3 | S |
-| Navigation history: Back / Forward (Alt+←/→) | ❌ | Basic in Obsidian; a must | P1 | S |
+| Navigation history: Back / Forward (Alt+←/→) | ✅ | Window-wide, across tabs and panes; mouse side buttons | | |
 | Bookmarks: files and folders | ✅ | | | |
 | Bookmarks: searches, headings, graphs, groups | ❌ | | P3 | M |
 | Outline (table of contents, auto-scroll to the current section) | ✅ | | | |
@@ -165,8 +165,8 @@ any text file can be edited, not just Markdown.
 |---|---|---|---|---|
 | Tabs, reorder, close others, restore session | ✅ | | | |
 | Split panes | 🟡 | Two panes (right or down); Obsidian allows any number | P2 | M |
-| Undo close tab (Ctrl+Shift+T) | ❌ | | P1 | S |
-| Go to tab 1–8 (Ctrl+1…8), last tab (Ctrl+9) | ❌ | | P2 | S |
+| Undo close tab (Ctrl+Shift+T) | ✅ | | | |
+| Go to tab 1–8 (Ctrl+1…8), last tab (Ctrl+9) | ✅ | | | |
 | Tab list drop-down (all open tabs, close all, bookmark all) | ❌ | | P3 | S |
 | "Open linked view" for a note: its local graph, backlinks, outline, properties beside it | ❌ | | P3 | S |
 | Status bar: backlink and property counts, editing mode switch | 🟡 | Words, encoding and line endings shown | P3 | S |

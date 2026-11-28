@@ -45,6 +45,7 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
@@ -59,6 +60,36 @@
 #include <utility>
 
 namespace {
+
+// The mouse's back / forward side buttons anywhere in the window. The press goes to the widget under the mouse
+// (an editor takes every button), so it's caught for the whole application before it gets there.
+class SideButtonFilter : public QObject {
+public:
+    SideButtonFilter(QWidget *window, std::function<void(bool forward)> go)
+        : QObject(window)
+        , m_window(window)
+        , m_go(std::move(go))
+    {
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::MouseButtonPress)
+            return false;
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() != Qt::BackButton && mouse->button() != Qt::ForwardButton)
+            return false;
+        const auto *widget = qobject_cast<QWidget *>(watched);
+        if (!widget || widget->window() != m_window)
+            return false;
+        m_go(mouse->button() == Qt::ForwardButton);
+        return true;
+    }
+
+private:
+    QWidget *m_window;
+    std::function<void(bool)> m_go;
+};
 
 // Any text file opens; saving a new document suggests Markdown.
 const QString openFilter = QStringLiteral("All files (*);;Markdown (*.md *.markdown);;Text (*.txt)");
@@ -164,6 +195,7 @@ MainWindow::MainWindow(QWidget *parent)
             [this](const QString &message) { statusBar()->showMessage(message, 15000); });
 
     createMenus();
+    qApp->installEventFilter(new SideButtonFilter(this, [this](bool forward) { showPlace(forward); }));
     statusBar()->setSizeGripEnabled(false);
     m_encodingButton = new QToolButton(this);
     m_encodingButton->setAutoRaise(true);
@@ -241,6 +273,9 @@ void MainWindow::createMenus()
     file->addSeparator();
     file->addAction(tr("&Close Tab"), QKeySequence(Qt::CTRL | Qt::Key_W), this,
                     [this] { closeTab(currentTab()); });
+    m_reopenAction = file->addAction(tr("Reopen Closed Ta&b"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T), this,
+                                     &MainWindow::reopenClosedTab);
+    m_reopenAction->setEnabled(false);
     file->addAction(tr("&Quit"), QKeySequence::Quit, this, &QWidget::close);
 
     QMenu *edit = menuBar()->addMenu(tr("&Edit"));
@@ -296,8 +331,7 @@ void MainWindow::createMenus()
     toggleSideBar->setCheckable(true);
     view->addAction(tr("O&utline"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), this,
                     [this] { toggleSidePage(m_outline); });
-    view->addAction(tr("Ta&gs"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T), this,
-                    [this] { toggleSidePage(m_tagPanel); });
+    view->addAction(tr("Ta&gs"), this, [this] { toggleSidePage(m_tagPanel); });
     view->addAction(tr("Graph &View"), QKeySequence(Qt::CTRL | Qt::Key_G), this, &MainWindow::showGraph);
     view->addAction(tr("&Command Palette…"), QKeySequence(Qt::CTRL | Qt::Key_P), this, [this] {
         QMetaObject::invokeMethod(this, &MainWindow::showCommandPalette, Qt::QueuedConnection);
@@ -347,6 +381,22 @@ void MainWindow::createMenus()
     view->addAction(tr("Zoom &In"), QKeySequence::ZoomIn, this, [this] { currentEditor()->zoomIn(1); });
     view->addAction(tr("Zoom &Out"), QKeySequence::ZoomOut, this, [this] { currentEditor()->zoomOut(1); });
 
+    // Back / Forward like Obsidian (Ctrl+Alt+arrows) and browsers (Alt+arrows); the mouse's side buttons too.
+    QMenu *go = menuBar()->addMenu(tr("&Go"));
+    m_backAction = go->addAction(tr("&Back"), this, &MainWindow::goBack);
+    m_backAction->setShortcuts({QKeySequence(Qt::ALT | Qt::Key_Left), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Left)});
+    m_forwardAction = go->addAction(tr("&Forward"), this, &MainWindow::goForward);
+    m_forwardAction->setShortcuts(
+        {QKeySequence(Qt::ALT | Qt::Key_Right), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Right)});
+    go->addSeparator();
+    QMenu *tabsMenu = go->addMenu(tr("Go to &Tab"));
+    for (int i = 0; i < 8; ++i) {
+        tabsMenu->addAction(tr("Tab &%1").arg(i + 1), QKeySequence(Qt::CTRL | Qt::Key(Qt::Key_1 + i)), this,
+                           [this, i] { goToTab(i); });
+    }
+    tabsMenu->addAction(tr("&Last Tab"), QKeySequence(Qt::CTRL | Qt::Key_9), this, [this] { goToTab(-1); });
+    updateHistoryActions();
+
     m_pluginsMenu = menuBar()->addMenu(tr("&Plugins"));
     populatePluginsMenu();
 
@@ -357,6 +407,112 @@ void MainWindow::createMenus()
     });
     help->addSeparator();
     help->addAction(tr("&About MDEditor"), this, &MainWindow::about);
+}
+
+// --- Back / Forward, closed tabs ----------------------------------------------------------------
+
+void MainWindow::rememberPosition()
+{
+    if (m_historyTab && !m_historyTab->isUntitled())
+        m_history.updatePosition(m_historyTab->filePath(), m_historyTab->editor()->textCursor().position());
+}
+
+void MainWindow::noteShown(bool jump)
+{
+    if (m_quietHistory > 0 || !m_tabs)
+        return;
+    EditorTab *tab = currentTab();
+    if (m_historyTab != tab)
+        rememberPosition(); // where the cursor was in the place being left
+    m_historyTab = tab;
+    if (tab && !tab->isUntitled())
+        m_history.visit({tab->filePath(), tab->editor()->textCursor().position()}, jump);
+    updateHistoryActions();
+}
+
+void MainWindow::updateHistoryActions()
+{
+    if (m_backAction)
+        m_backAction->setEnabled(m_history.canGoBack());
+    if (m_forwardAction)
+        m_forwardAction->setEnabled(m_history.canGoForward());
+}
+
+void MainWindow::goBack()
+{
+    showPlace(false);
+}
+
+void MainWindow::goForward()
+{
+    showPlace(true);
+}
+
+void MainWindow::showPlace(bool forward)
+{
+    rememberPosition();
+    for (;;) {
+        const int target = m_history.index() + (forward ? 1 : -1);
+        if (target < 0 || target >= m_history.places().size())
+            break;
+        const NavigationHistory::Place place = m_history.places().at(target);
+        ++m_quietHistory;
+        const bool opened = QFileInfo::exists(place.path) && openFile(place.path);
+        --m_quietHistory;
+        if (!opened) { // deleted, or not a text file any more: skip it
+            m_history.remove(place.path);
+            continue;
+        }
+        if (forward)
+            m_history.forward();
+        else
+            m_history.back();
+        placeCursor(place.position);
+        m_historyTab = currentTab();
+        break;
+    }
+    updateHistoryActions();
+}
+
+void MainWindow::placeCursor(int position)
+{
+    MarkdownEditor *editor = currentEditor();
+    if (!editor)
+        return;
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(std::clamp(position, 0, editor->document()->characterCount() - 1));
+    editor->setTextCursor(cursor);
+    editor->centerCursor();
+    editor->setFocus();
+}
+
+void MainWindow::reopenClosedTab()
+{
+    while (!m_closedTabs.isEmpty()) {
+        const ClosedTab closed = m_closedTabs.takeLast();
+        if (!QFileInfo::exists(closed.path))
+            continue;
+        if (closed.pane >= 0 && closed.pane < m_panes.size())
+            setCurrentPane(m_panes.at(closed.pane));
+        rememberPosition();
+        ++m_quietHistory;
+        const bool opened = openFile(closed.path);
+        --m_quietHistory;
+        if (!opened)
+            continue;
+        placeCursor(closed.position);
+        noteShown(true);
+        break;
+    }
+    m_reopenAction->setEnabled(!m_closedTabs.isEmpty());
+}
+
+void MainWindow::goToTab(int index)
+{
+    if (m_tabs->count() == 0)
+        return;
+    if (index < m_tabs->count()) // like Obsidian: no tab #5 with three tabs open
+        m_tabs->setCurrentIndex(index < 0 ? m_tabs->count() - 1 : index);
 }
 
 void MainWindow::checkForUpdatesOnStart()
@@ -576,6 +732,12 @@ void MainWindow::changeEvent(QEvent *event)
 
 void MainWindow::restoreSession(const QStringList &files)
 {
+    // Reopening the session isn't navigation: only the tab shown at the end is a place to go back to.
+    ++m_quietHistory;
+    const auto record = qScopeGuard([this] {
+        --m_quietHistory;
+        noteShown();
+    });
     QSettings settings;
     const QString folder = settings.value("session/folder").toString();
     // The mount may not be up yet: such items wait for it instead of looking like deleted files. Even
@@ -650,6 +812,7 @@ bool MainWindow::openFile(const QString &path)
     const QString absolute = QFileInfo(path).absoluteFilePath();
     if (EditorTab *existing = findTab(absolute)) {
         activate(existing);
+        noteShown();
         return true;
     }
 
@@ -675,6 +838,7 @@ bool MainWindow::openFile(const QString &path)
     }
 
     activate(tab);
+    noteShown(); // a reused empty tab changes its file without a tab change
     RecentFiles::add(absolute);
     if (m_folderPanel->rootPath().isEmpty())
         openFolder(QFileInfo(absolute).absolutePath());
@@ -796,6 +960,7 @@ void MainWindow::setCurrentPane(QTabWidget *pane)
     updateWindowTitle();
     updateMarkdownActions();
     updateEncodingButton();
+    noteShown();
 }
 
 void MainWindow::activate(EditorTab *tab)
@@ -837,6 +1002,7 @@ QTabWidget *MainWindow::createPane()
                 m_folderPanel->selectFile(tab->filePath());
             tab->setFocus();
         }
+        noteShown();
     });
     m_paneSplitter->addWidget(pane);
     m_panes << pane;
@@ -1009,6 +1175,13 @@ bool MainWindow::closeTab(EditorTab *tab)
     // A twin keeps the changes: only the last view of a file asks about them.
     if (!tab->twin() && !maybeSave(tab))
         return false;
+    if (!tab->isUntitled()) {
+        m_closedTabs.append({tab->filePath(), tab->editor()->textCursor().position(), int(m_panes.indexOf(pane))});
+        if (m_closedTabs.size() > maxClosedTabs)
+            m_closedTabs.removeFirst();
+        if (m_reopenAction)
+            m_reopenAction->setEnabled(true);
+    }
     tab->unlinkTwin();
     pane->removeTab(pane->indexOf(tab));
     tab->deleteLater();
@@ -1300,8 +1473,13 @@ void MainWindow::toggleSidePage(QWidget *page)
 
 void MainWindow::openAt(const QString &path, int line, int column, int length)
 {
-    if (!openFile(path))
+    rememberPosition();
+    ++m_quietHistory;
+    const bool opened = openFile(path);
+    --m_quietHistory;
+    if (!opened)
         return;
+    const auto record = qScopeGuard([this] { noteShown(true); });
     MarkdownEditor *editor = currentEditor();
     const QTextBlock block = editor->document()->findBlockByNumber(line);
     if (!block.isValid())
@@ -1661,6 +1839,11 @@ bool MainWindow::relocate(const QString &path, const QString &target, const QStr
         RecentFiles::add(result.path);
     }
     Bookmarks::moved(path, result.path);
+    m_history.rename(QDir::cleanPath(path), result.path);
+    for (ClosedTab &closed : m_closedTabs) {
+        if (FileActions::isSameOrInside(closed.path, path))
+            closed.path = result.path + closed.path.mid(QDir::cleanPath(path).size());
+    }
     updateWindowTitle();
     m_folderPanel->selectFile(result.path);
     return true;
@@ -1712,6 +1895,8 @@ void MainWindow::deletePath(const QString &path)
         discardTab(tab);
     RecentFiles::remove(path);
     Bookmarks::removed(path);
+    m_history.remove(QDir::cleanPath(path));
+    updateHistoryActions();
     statusBar()->showMessage(tr("Deleted %1").arg(info.fileName()), 5000);
 }
 

@@ -42,8 +42,10 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   groups, all matches highlighted, Replace All as one undo step
 - Quick switcher (Ctrl+O): type part of a name to open any file in the folder, or Shift+Enter to create the note;
   the file dialog is Ctrl+Alt+O. Command palette (Ctrl+P): every menu command by name
+- Go → Back / Forward (Alt+← / Alt+→, Ctrl+Alt+← / →, or the mouse's side buttons) through the notes and places
+  visited, across tabs and panes; File → Reopen Closed Tab (Ctrl+Shift+T); Ctrl+1…8 go to a tab, Ctrl+9 to the last
 - Right sidebar (Ctrl+Shift+B): Outline of the current note (Ctrl+Shift+L), Search in the folder (Ctrl+Shift+F, match
-  case, regular expressions) and Tags (Ctrl+Shift+T) with their note counts, nested `#tags/like/this` included
+  case, regular expressions) and Tags with their note counts, nested `#tags/like/this` included
 - `#tags` shown as pills, YAML frontmatter shown as properties, `> [!note]` callouts as colored boxes (`[!tip]-`
   starts folded), footnotes `[^1]` as superscripts with the text on hover (Ctrl+click jumps to it)
 - Folding: the chevron left of a heading, a list item with children or a callout hides what's under it; View →

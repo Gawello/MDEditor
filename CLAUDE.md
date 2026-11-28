@@ -116,7 +116,7 @@ src/plugins/            PluginManager (discovery, QJSEngine per plugin, 3 s watc
 src/document/Document   read/write/check with encoding details (static, off the GUI thread), FileStamp
 src/document/Encodings  detection, labels, common list, encode/decode with error reporting
 src/panels/FolderPanel  QFileSystemModel tree (no icons, .md suffix hidden), bookmarks list, drag to move
-src/app/                MainWindow (tabs, menus, status bar, session), EditorTab (editor + FindBar),
+src/app/                MainWindow (tabs, menus, status bar, session), NavigationHistory (Back/Forward), EditorTab (editor + FindBar),
                         FindBar (find/replace, highlights via extraSelections), AppSettings, SettingsDialog,
                         Background (runInBackground, runAndWait), ExternalChangeBar, CloudDrive (rclone),
                         CloudDrivePage, FileActions (rename/move/trash/copy/create via runAndWait, copy path,
@@ -165,6 +165,13 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 
 ### Obsidian features (navigation, notes)
 
+- Back/Forward: `NavigationHistory` is window-wide (MDEditor has one tab per file, so Obsidian's per-tab history
+  would rarely have anything to go back to). `MainWindow::noteShown` records the current tab after tab changes and
+  `openFile`; jumps inside a file call `rememberPosition()` first and `noteShown(true)` after (see `openAt`). Code
+  that opens files as a side effect (session restore, Back itself) raises `m_quietHistory`. The mouse side buttons
+  go through an application-wide event filter, since the editor under the mouse takes every button.
+- `PaletteDialog::choose` re-activates the main window after `exec()`: without it (no window manager on Xvfb) the
+  window's shortcuts stay dead while typing still reaches the editor.
 - Ctrl+O is the quick switcher (Obsidian's), the file dialog is Ctrl+Alt+O; Ctrl+P the command palette, which lists
   the menu bar's actions (emitting each menu's `aboutToShow` first, so self-filling menus are included).
 - `NoteIndex` follows `FolderPanel::rootChanged`; `MainWindow::saveTo` passes the saved text to `update()`.

@@ -226,7 +226,12 @@ bool PaletteDialog::choose()
 {
     m_search->setFocus();
     filter();
-    if (exec() != QDialog::Accepted || m_chosen < 0 || m_chosen >= m_shown.size())
+    const int result = exec();
+    // Hand the activation back explicitly: without it (no window manager, some X11 setups) the window's
+    // shortcuts stay dead after the dialog closes, although typing still reaches the editor.
+    if (QWidget *owner = parentWidget())
+        owner->window()->activateWindow();
+    if (result != QDialog::Accepted || m_chosen < 0 || m_chosen >= m_shown.size())
         return false;
     if (const auto &run = m_shown[m_chosen].run)
         run();

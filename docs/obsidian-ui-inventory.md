@@ -191,9 +191,9 @@ out.
 |---|---|
 | Create new note [Ctrl+N], in current tab, to the right [Ctrl+Shift+N] | 🟡 new tab |
 | New tab [Ctrl+T], Close current tab [Ctrl+W], Close all other tabs, Close others in tab group, Close this tab group | ✅ |
-| Undo close tab [Ctrl+Shift+T] | ❌ |
-| Go to tab #1–8 [Ctrl+1…8], last tab [Ctrl+9], next/previous tab [Ctrl+Tab, Ctrl+PgDn / Ctrl+Shift+Tab, Ctrl+PgUp] | 🟡 next/previous only |
-| Navigate back [Ctrl+Alt+←] / forward [Ctrl+Alt+→] | ❌ |
+| Undo close tab [Ctrl+Shift+T] | ✅ |
+| Go to tab #1–8 [Ctrl+1…8], last tab [Ctrl+9], next/previous tab [Ctrl+Tab, Ctrl+PgDn / Ctrl+Shift+Tab, Ctrl+PgUp] | ✅ |
+| Navigate back [Ctrl+Alt+←] / forward [Ctrl+Alt+→] | ✅ (also Alt+←/→) |
 | Focus on last note, Focus on tab group left/right/above/below | ❌ |
 | Split right, Split down | ✅ |
 | Toggle pin, Toggle stacked tabs | ❌ |

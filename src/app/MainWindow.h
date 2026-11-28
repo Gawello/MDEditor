@@ -1,6 +1,9 @@
 #pragma once
 
+#include "app/NavigationHistory.h"
+
 #include <QMainWindow>
+#include <QPointer>
 
 #include <functional>
 
@@ -114,6 +117,18 @@ private:
     void showGraph();
     void insertTemplate(MarkdownEditor *editor);
     QString notesRoot() const; // the open folder, or where dialogs start without one
+    // Back / Forward. noteShown records the current tab's place (a new entry when `jump` or another file);
+    // call rememberPosition first when the cursor is about to jump inside the same file.
+    void noteShown(bool jump = false);
+    void rememberPosition();
+    void goBack();
+    void goForward();
+    void showPlace(bool forward);
+    void updateHistoryActions();
+    void reopenClosedTab();
+    void goToTab(int index); // -1: the last one
+    // Places a file at `position` (clamped) in the current tab's editor and scrolls to it.
+    void placeCursor(int position);
 
     QTabWidget *m_tabs; // the current pane
     QList<QTabWidget *> m_panes; // one, or two when split
@@ -138,6 +153,19 @@ private:
     QLabel *m_wordCount = nullptr;
     QWidget *m_graphWindow = nullptr;
     GraphView *m_graph = nullptr;
+    NavigationHistory m_history;
+    QPointer<EditorTab> m_historyTab; // the tab whose place is the history's current entry
+    int m_quietHistory = 0;           // > 0: opening files doesn't record places (session restore, Back)
+    QAction *m_backAction = nullptr;
+    QAction *m_forwardAction = nullptr;
+    QAction *m_reopenAction = nullptr;
+    struct ClosedTab {
+        QString path;
+        int position = 0;
+        int pane = 0;
+    };
+    QList<ClosedTab> m_closedTabs; // most recent last
+    static constexpr int maxClosedTabs = 20;
     // Session items on Google Drive, waiting for the mount.
     QString m_pendingFolder;
     QStringList m_pendingFiles;

@@ -47,6 +47,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
+        src/app/NavigationHistory.cpp src/app/NavigationHistory.h
         src/app/PaletteDialog.cpp src/app/PaletteDialog.h
         src/app/RecentFiles.cpp src/app/RecentFiles.h
         src/app/SymbolPicker.cpp src/app/SymbolPicker.h
