@@ -42,6 +42,7 @@ public:
     static constexpr auto dailyTemplateKey = "notes/dailyTemplate"; // a note used as the template
     static constexpr auto templatesFolderKey = "notes/templatesFolder";
     static constexpr auto updateLinksKey = "notes/updateLinks"; // after a rename or move: "ask", "always", "never"
+    static constexpr auto excludedKey = "notes/excluded"; // one folder or pattern per line, relative to the root
     static constexpr auto snapshotsKey = "notes/snapshots";              // version history on/off
     static constexpr auto snapshotMinutesKey = "notes/snapshotMinutes"; // at most one copy per note this often
     static constexpr auto snapshotDaysKey = "notes/snapshotDays";       // kept this long
@@ -71,6 +72,7 @@ public:
     QString templatesFolder() const { return value(templatesFolderKey, QStringLiteral("templates")).toString(); }
     QString updateLinks() const { return value(updateLinksKey, QStringLiteral("ask")).toString(); }
     bool snapshots() const { return value(snapshotsKey, true).toBool(); }
+    QStringList excluded() const { return value(excludedKey).toString().split(u'\n', Qt::SkipEmptyParts); }
     int snapshotMinutes() const { return value(snapshotMinutesKey, 5).toInt(); }
     int snapshotDays() const { return value(snapshotDaysKey, 7).toInt(); }
     bool checkUpdatesOnStart() const { return value(checkUpdatesOnStartKey, false).toBool(); } // off: asks GitHub

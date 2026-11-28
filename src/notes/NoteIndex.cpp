@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
+#include <QRegularExpression>
 #include <QUrl>
 
 #include <algorithm>
@@ -49,10 +50,44 @@ void NoteIndex::refresh()
     const QString root = m_root;
     const Notes previous = m_notes;
     m_scanning = true;
-    m_watcher.setFuture(runInBackground([root, previous] { return scan(root, previous); }));
+    m_watcher.setFuture(runInBackground([root, previous, excluded = m_excluded] { return scan(root, previous, excluded); }));
 }
 
-NoteIndex::Result NoteIndex::scan(const QString &root, const Notes &previous)
+void NoteIndex::setExcluded(const QStringList &patterns)
+{
+    QStringList cleaned;
+    for (const QString &pattern : patterns) {
+        QString entry = QDir::fromNativeSeparators(pattern.trimmed());
+        while (entry.startsWith(u'/'))
+            entry.remove(0, 1);
+        while (entry.endsWith(u'/'))
+            entry.chop(1);
+        if (!entry.isEmpty())
+            cleaned << entry;
+    }
+    if (cleaned == m_excluded)
+        return;
+    m_excluded = cleaned;
+    refresh();
+}
+
+bool NoteIndex::isExcluded(const QString &relativePath, const QStringList &patterns)
+{
+    for (const QString &pattern : patterns) {
+        if (pattern.contains(u'*') || pattern.contains(u'?')) { // a pattern: the name, or the whole path
+            const QRegularExpression glob(QRegularExpression::wildcardToRegularExpression(
+                pattern, QRegularExpression::UnanchoredWildcardConversion | QRegularExpression::NonPathWildcardConversion));
+            const QRegularExpression anchored(QStringLiteral("^(?:%1)$").arg(glob.pattern()));
+            if (anchored.match(relativePath.section(u'/', -1)).hasMatch() || anchored.match(relativePath).hasMatch())
+                return true;
+        } else if (relativePath == pattern || relativePath.startsWith(pattern + u'/')) { // a folder or a file
+            return true;
+        }
+    }
+    return false;
+}
+
+NoteIndex::Result NoteIndex::scan(const QString &root, const Notes &previous, const QStringList &excluded)
 {
     Result result;
     result.root = root;
@@ -64,6 +99,8 @@ NoteIndex::Result NoteIndex::scan(const QString &root, const Notes &previous)
             QDir(folder).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
         for (const QFileInfo &entry : entries) {
             if (entry.fileName().startsWith(u'.'))
+                continue;
+            if (!excluded.isEmpty() && isExcluded(entry.absoluteFilePath().mid(root.size() + 1), excluded))
                 continue;
             if (entry.isDir()) {
                 if (!entry.isSymLink() && entry.fileName() != u"node_modules")
@@ -122,7 +159,7 @@ void NoteIndex::finished()
 void NoteIndex::update(const QString &path, const QString &text)
 {
     const QString clean = QDir::cleanPath(path);
-    if (m_root.isEmpty() || !clean.startsWith(m_root + u'/'))
+    if (m_root.isEmpty() || !clean.startsWith(m_root + u'/') || isExcluded(clean.mid(m_root.size() + 1), m_excluded))
         return;
     auto note = std::make_shared<Note>();
     note->path = clean;

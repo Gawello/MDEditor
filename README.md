@@ -51,6 +51,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - The note's name is shown as a title above it; editing it renames the file (links follow)
 - Folder panel: sort by name or modification time (⇅, folders first, natural number order), collapse all (⊟),
   Ctrl/Shift+click to select several items and move, bookmark or delete them together, Search in Folder on a folder
+- Excluded files (Settings → Notes): folders and patterns left out of search, the graph, suggestions and backlinks
 - Settings → Hotkeys: every menu command's shortcut can be changed or removed (search by name or key, conflicts
   pointed out, Reset for the default)
 - Version history (File → Version History): a copy of each note is kept when it's opened and when it's saved (at

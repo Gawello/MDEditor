@@ -285,7 +285,7 @@ settings in new window ➖.
 | Confirm before deleting files | ✅ |
 | Delete attachments when deleting files (ask / always / never) | ❌ |
 | Deleted files (system trash / `.trash` / permanently) | 🟡 system trash |
-| Excluded files | ❌ |
+| Excluded files | ✅ |
 | Allow URI callbacks | ❌ |
 | Rebuild vault cache | ❌ (the index refreshes on activation) |
 

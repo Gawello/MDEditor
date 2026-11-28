@@ -189,6 +189,11 @@ MainWindow::MainWindow(QWidget *parent)
         m_sideBar->showPage(m_search);
         m_search->showTag(tag);
     });
+    m_index->setExcluded(AppSettings::instance().excluded());
+    connect(&AppSettings::instance(), &AppSettings::changed, m_index, [this](const QString &key) {
+        if (key == QLatin1String(AppSettings::excludedKey))
+            m_index->setExcluded(AppSettings::instance().excluded());
+    });
     connect(m_folderPanel, &FolderPanel::rootChanged, m_index, &NoteIndex::setRoot);
     // [[Links]] and embeds find notes anywhere in the open folder, like in Obsidian.
     MarkdownEditor::setLinkResolver([index = QPointer<NoteIndex>(m_index)](const QString &target, bool wiki,

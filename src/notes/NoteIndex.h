@@ -32,6 +32,10 @@ public:
     void setRoot(const QString &root); // empty: no folder
     QString root() const { return m_root; }
     void refresh();                    // scans again in the background (no-op while a scan runs: queued)
+    // Obsidian's "Excluded files": folders ("archive", "drafts/old") and patterns ("*.log", "tmp*") relative to the
+    // root, left out of the index (and so of search, the graph, suggestions, tags and backlinks).
+    void setExcluded(const QStringList &patterns);
+    static bool isExcluded(const QString &relativePath, const QStringList &patterns);
     // Until the scan's result is in: the thread may be done while its result still waits in the event queue.
     bool scanning() const { return m_scanning; }
     // An open tab changed or saved its note: use its text right away.
@@ -88,7 +92,7 @@ private:
         QStringList files;
         Notes notes;
     };
-    static Result scan(const QString &root, const Notes &previous);
+    static Result scan(const QString &root, const Notes &previous, const QStringList &excluded);
     void finished();
     void indexAliases(); // rebuilds m_byAlias from the notes
 
@@ -105,5 +109,6 @@ private:
     mutable bool m_backlinksDirty = true;
     QFutureWatcher<Result> m_watcher;
     bool m_again = false;
+    QStringList m_excluded;
     bool m_scanning = false;
 };

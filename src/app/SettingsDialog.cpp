@@ -182,6 +182,17 @@ QWidget *SettingsDialog::createNotesPage()
                               "Markdown links pointing to it, and the relative links of the notes it holds, can be "
                               "changed to match.")));
 
+    layout->addWidget(heading(tr("Excluded files")));
+    auto *excluded = new QPlainTextEdit(settings.excluded().join(u'\n'), page);
+    excluded->setPlaceholderText(tr("archive\ndrafts/old\n*.log"));
+    excluded->setMaximumHeight(90);
+    connect(excluded, &QPlainTextEdit::textChanged, this, [excluded] {
+        AppSettings::instance().setValue(QString::fromLatin1(AppSettings::excludedKey), excluded->toPlainText());
+    });
+    layout->addWidget(excluded);
+    layout->addWidget(hint(tr("One folder or pattern per line, relative to the open folder. They are left out of "
+                              "search, the graph, the quick switcher, suggestions, tags and backlinks.")));
+
     layout->addWidget(heading(tr("Version history")));
     auto *history = new QFormLayout;
     auto *keep = new QCheckBox(tr("Keep copies of notes as they are opened and saved"), page);

@@ -141,3 +141,32 @@ TEST_CASE(moving_several_notes_asks_once_and_updates_links)
     }
     AppSettings::instance().setValue(QString::fromLatin1(AppSettings::updateLinksKey), QStringLiteral("ask"));
 }
+
+TEST_CASE(excluded_files_stay_out_of_the_index)
+{
+    CHECK(NoteIndex::isExcluded(QStringLiteral("archive/a.md"), {"archive"}));
+    CHECK(NoteIndex::isExcluded(QStringLiteral("archive"), {"archive"}));
+    CHECK(!NoteIndex::isExcluded(QStringLiteral("archived.md"), {"archive"}));
+    CHECK(NoteIndex::isExcluded(QStringLiteral("drafts/old/x.md"), {"drafts/old"}));
+    CHECK(!NoteIndex::isExcluded(QStringLiteral("drafts/new.md"), {"drafts/old"}));
+    CHECK(NoteIndex::isExcluded(QStringLiteral("logs/run.log"), {"*.log"}));
+    CHECK(NoteIndex::isExcluded(QStringLiteral("tmp-1.md"), {"tmp*"}));
+    CHECK(!NoteIndex::isExcluded(QStringLiteral("notes/a.md"), {"*.log", "tmp*"}));
+
+    QTemporaryDir dir;
+    writeNote(dir.filePath(QStringLiteral("Home.md")), "[[Old]] #keep\n");
+    writeNote(dir.filePath(QStringLiteral("archive/Old.md")), "#gone [[Home]]\n");
+    writeNote(dir.filePath(QStringLiteral("debug.log")), "x\n");
+    NoteIndex index;
+    index.setExcluded({QStringLiteral("archive/"), QStringLiteral("*.log")});
+    index.setRoot(dir.path());
+    CHECK(waitFor([&index] { return !index.scanning() && index.notes().size() == 1; }));
+    CHECK(index.files() == QStringList{QDir::cleanPath(dir.filePath(QStringLiteral("Home.md")))});
+    CHECK(!index.tagCounts().contains("gone") && index.tagCounts().contains("keep"));
+    CHECK(index.backlinks(dir.filePath(QStringLiteral("Home.md"))).isEmpty());
+    // A save of an excluded note doesn't bring it back; clearing the list does.
+    index.update(dir.filePath(QStringLiteral("archive/Old.md")), QStringLiteral("#gone\n"));
+    CHECK(index.notes().size() == 1);
+    index.setExcluded({});
+    CHECK(waitFor([&index] { return !index.scanning() && index.notes().size() == 2; }));
+}
