@@ -151,7 +151,9 @@ The `core` preset builds only the Markdown parser and its tests, with no Qt need
 
 ## Roadmap
 
-Remote (http) images, syntax highlighting in code blocks, HTML/PDF export, translations.
+[docs/obsidian-features.md](docs/obsidian-features.md) maps every Obsidian feature to its status here, with
+priorities and the planned order of releases. [docs/obsidian-ui-inventory.md](docs/obsidian-ui-inventory.md) lists
+every Obsidian right-click menu, panel, command and setting entry by entry.
 
 ## License
 

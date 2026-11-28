@@ -87,7 +87,11 @@ SettingsDialog::SettingsDialog(CloudDrive *drive, QWidget *parent)
     m_sections->setFixedWidth(170);
     m_sections->setFrameShape(QFrame::NoFrame);
     m_sections->setStyleSheet(QStringLiteral("QListWidget { background: transparent; outline: 0; }"
-                                             "QListWidget::item { padding: 6px 10px; border-radius: 5px; }"));
+                                             "QListWidget::item { padding: 6px 10px; border-radius: 5px; }"
+                                             // Styling the item drops the style's own selection background, but
+                                             // not the selected text color: white on white without this.
+                                             "QListWidget::item:selected { background: palette(highlight);"
+                                             " color: palette(highlighted-text); }"));
     connect(m_sections, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
 
     addPage(tr("Appearance"), createAppearancePage());

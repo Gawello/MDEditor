@@ -122,7 +122,10 @@ src/app/                MainWindow (tabs, menus, status bar, session), EditorTab
                         CloudDrivePage, FileActions (rename/move/trash/copy/create via runAndWait, copy path,
                         show in file manager), Bookmarks (AppSettings `bookmarks`),
                         RecentFiles, TabCloseButton, TablePicker, SymbolPicker + SymbolSets
-docs/                   plugins.md (plugin API), themes.md (theme JSON); examples/plugins/ = sample plugins
+docs/                   plugins.md (plugin API), themes.md (theme JSON), obsidian-features.md (Obsidian feature map and
+                        roadmap: update its status column when a feature lands), obsidian-ui-inventory.md (every
+                        Obsidian menu, panel, command and setting, entry by entry, with how it was gathered);
+                        examples/plugins/ = sample plugins
 src/markdown/NoteScan   Qt-free: a note's headings, tags (inline + frontmatter), links, properties; parseBlocks, foldEnd
 src/notes/NoteIndex     every file under the open folder + NoteScan of each note, built off the GUI thread, refreshed
                         on activation (re-reads changed files only); resolve() for [[links]]; tagCounts()

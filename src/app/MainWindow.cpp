@@ -1474,9 +1474,10 @@ void MainWindow::updateWordCount()
         inWord = letter;
     }
     const int characters = int(text.size()) - int(text.count(QChar::ParagraphSeparator));
-    m_wordCount->setText(selection ? tr("%n word(s) selected", nullptr, words)
-                                   : tr("%n word(s)", nullptr, words) + QStringLiteral(" · ")
-                                         + tr("%n character(s)", nullptr, characters));
+    // No translation is loaded, so "%n word(s)" would show as is: pick the English form here.
+    const QString wordText = words == 1 ? tr("1 word") : tr("%1 words").arg(words);
+    const QString characterText = characters == 1 ? tr("1 character") : tr("%1 characters").arg(characters);
+    m_wordCount->setText(selection ? tr("%1 selected").arg(wordText) : wordText + QStringLiteral(" · ") + characterText);
 }
 
 // --- Tab menu and file management ---------------------------------------------------------------
