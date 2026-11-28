@@ -1182,8 +1182,12 @@ QString MarkdownEditor::excerpt(const QString &text, const QString &anchor)
         const QString section = match.captured(3).trimmed();
         if (!match.captured(1).isEmpty() && !isImageFile(target)) {
             result += QFileInfo(target).completeBaseName(); // an embedded note: its name
-        } else if (!match.captured(1).isEmpty()) {
-            result += QStringLiteral("![](%1)").arg(QString::fromUtf8(QUrl::toPercentEncoding(target, "/")));
+        } else if (!match.captured(1).isEmpty()) { // the width hint goes along: ![[pic.png|300]]
+            const QString width = match.captured(4).trimmed().section(u'x', 0, 0);
+            bool number = false;
+            width.toInt(&number);
+            result += QStringLiteral("![image%1](%2)")
+                          .arg(number ? u'|' + width : QString(), QString::fromUtf8(QUrl::toPercentEncoding(target, "/")));
         } else if (!match.captured(4).isEmpty()) {
             result += match.captured(4);
         } else {
@@ -1195,6 +1199,8 @@ QString MarkdownEditor::excerpt(const QString &text, const QString &anchor)
         done = match.capturedEnd();
     }
     result += QStringView(content).mid(done);
+    // Qt's Markdown import drops images without alt text.
+    result.replace(QStringLiteral("![]("), QStringLiteral("![image]("));
     return result;
 }
 

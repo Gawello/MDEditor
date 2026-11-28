@@ -221,8 +221,8 @@ any text file can be edited, not just Markdown.
 | Restricted mode (plugins off) | ✅ | Plugins are off until enabled | | |
 | `obsidian://` URI scheme (open, new, search) | ❌ | `mdeditor://` | P3 | S |
 | Command-line interface | 🟡 | Opens files given on the command line | P3 | S |
-| Export to PDF | ❌ | `QTextDocument` / `QPdfWriter`; one of the most used features | P1 | M |
-| Export to HTML, print, copy as HTML | ❌ | | P2 | M |
+| Export to PDF | ✅ | A4; no math rendering or footnotes yet | P3 | S |
+| Export to HTML, print, copy as HTML | 🟡 | Export to HTML; no print | P3 | S |
 
 ## 11. Services and platforms
 

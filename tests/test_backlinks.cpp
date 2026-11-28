@@ -293,7 +293,7 @@ TEST_CASE(note_excerpts_and_previews)
     const QString all = MarkdownEditor::excerpt(note, {});
     CHECK(!all.contains("tags") && all.startsWith("# Alpha"));
     CHECK(all.contains("intro the beta and Gamma › Part"));
-    CHECK(all.contains("![](pic.png) Other"));
+    CHECK(all.contains("![image](pic.png) Other")); // Qt drops images without alt text
     const QString goals = MarkdownEditor::excerpt(note, QStringLiteral("goals"));
     CHECK(goals.startsWith("## Goals") && !goals.contains("Next") && !goals.contains("intro"));
     CHECK(MarkdownEditor::excerpt(note, QStringLiteral("^g1")) == "- ship ^g1");

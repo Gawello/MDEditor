@@ -4,6 +4,7 @@
 #include "app/Background.h"
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
+#include "app/Export.h"
 #include "app/FileActions.h"
 #include "app/FindBar.h"
 #include "app/RecentFiles.h"
@@ -310,6 +311,13 @@ void MainWindow::createMenus()
     file->addAction(tr("Save &As…"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), this,
                     [this] { saveAs(currentTab()); });
     file->addSeparator();
+    QAction *exportPdf = file->addAction(tr("&Export to PDF…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { exportNote(true); }, Qt::QueuedConnection);
+    });
+    QAction *exportHtml = file->addAction(tr("Export to &HTML…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { exportNote(false); }, Qt::QueuedConnection);
+    });
+    file->addSeparator();
     // F2 renames like in Obsidian: the current file, or what's selected in the folder panel if it has the focus.
     file->addAction(tr("Rena&me…"), QKeySequence(Qt::Key_F2), this, [this] {
         if (!m_folderPanel->renameCurrent() && !currentTab()->isUntitled())
@@ -382,7 +390,7 @@ void MainWindow::createMenus()
     QMenu *insert = format->addMenu(tr("I&nsert"));
     MarkdownEditor::addInsertActions(insert, markdown);
     m_markdownActions = format->actions();
-    m_markdownActions << checkbox << cycle;
+    m_markdownActions << checkbox << cycle << exportPdf << exportHtml;
     format->addSeparator();
     format->addAction(tr("&Prettify"), MarkdownEditor::prettifyShortcut(), this,
                       [this] { currentEditor()->formatAtCursor(); });
@@ -1904,6 +1912,43 @@ void MainWindow::insertTemplate(MarkdownEditor *editor)
     }
     dialog.setItems(items);
     dialog.choose();
+}
+
+void MainWindow::exportNote(bool pdf)
+{
+    EditorTab *tab = currentTab();
+    MarkdownEditor *editor = markdownEditor();
+    if (!tab || !editor)
+        return;
+    const QString name = tab->isUntitled() ? tr("Untitled") : QFileInfo(tab->filePath()).completeBaseName();
+    const QString folder = tab->isUntitled() ? dialogDirectory() : QFileInfo(tab->filePath()).absolutePath();
+    const QString suffix = pdf ? QStringLiteral("pdf") : QStringLiteral("html");
+    const QString path = QFileDialog::getSaveFileName(this, pdf ? tr("Export to PDF") : tr("Export to HTML"),
+                                                      QDir(folder).filePath(name + u'.' + suffix),
+                                                      pdf ? tr("PDF (*.pdf)") : tr("Web page (*.html *.htm)"));
+    if (path.isEmpty())
+        return;
+    Export::Options options{name, folder, editor->font(), 0, {}};
+    // Embedded notes go in with their text (found as links are: anywhere in the open folder).
+    const QString from = tab->isUntitled() ? QDir(folder).filePath(QStringLiteral("untitled.md")) : tab->filePath();
+    options.embed = [index = QPointer<NoteIndex>(m_index), from](const QString &target) -> QString {
+        const QString path = index ? index->resolve(target.section(u'#', 0, 0), true, from) : QString();
+        QFile file(path);
+        if (path.isEmpty() || !MarkdownEditor::isMarkdownFile(path) || file.size() > 2 * 1024 * 1024
+            || !file.open(QIODevice::ReadOnly))
+            return {};
+        QString text = QString::fromUtf8(file.readAll());
+        text.remove(u'\r');
+        return MarkdownEditor::excerpt(text, target.section(u'#', 1));
+    };
+    QString error;
+    const bool ok = pdf ? Export::toPdf(editor->markdown(), options, path, &error)
+                        : Export::toHtml(editor->markdown(), options, path, &error);
+    if (!ok)
+        QMessageBox::warning(this, pdf ? tr("Export to PDF") : tr("Export to HTML"),
+                             tr("Cannot write %1:\n%2").arg(QDir::toNativeSeparators(path), error));
+    else
+        statusBar()->showMessage(tr("Exported to %1").arg(QDir::toNativeSeparators(path)), 8000);
 }
 
 void MainWindow::updateBacklinkCount()

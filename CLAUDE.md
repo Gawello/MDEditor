@@ -186,6 +186,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Line numbers: a child widget in the viewport's left margin (`updateMargins` makes the margin at least as wide),
   painted by `MarkdownEditor::paintLineNumbers` from the block geometry; lines collapsed to nothing get no number,
   image/embed/formula lines get theirs at the top.
+- Export (`app/Export`): `prepare` (embedded notes' text, callout titles) → `MarkdownEditor::excerpt` →
+  `QTextDocument::setMarkdown` → images given their `|width` and fitted → `QPdfWriter` (A4, 96 dpi) or `toHtml`.
+  Qt's Markdown import drops images with empty alt text: `excerpt` writes `![image](…)`.
 - Colored highlights: Obsidian 1.15 writes `==🔴text==`; `applyInline` treats the emoji after the opening `==` as a
   marker and tints the highlight (`highlightColors()`), no parser change.
 - Auto-pairing: `md::pairFor`/`deletesPair` (Qt-free) decide, `MarkdownEditor::autoPair` (start of `keyPressEvent`)

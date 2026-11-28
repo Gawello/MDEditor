@@ -201,7 +201,7 @@ out.
 | Rename file [F2], Move current file to another folder, Make a copy, Delete current file, Show trash | 🟡 no "show trash" |
 | Copy file path (from system root / from vault folder), Copy Obsidian URL | 🟡 absolute path |
 | Open in default app, Show in system explorer, Reveal current file in navigation | ✅ |
-| Export to PDF… | ❌ |
+| Export to PDF… | ✅ |
 | Toggle left sidebar / right sidebar / ribbon | ✅ (no ribbon) |
 | Zoom in / out / reset, Increase / decrease font size | 🟡 no reset |
 | Change theme…, Toggle light/dark mode | 🟡 in Settings only |

@@ -137,6 +137,7 @@ private:
     void createNamedNote(const QString &name);
     void updateWordCount();
     void updateBacklinkCount();
+    void exportNote(bool pdf); // File → Export to PDF / HTML
     void openDailyNote();
     void showGraph();
     void insertTemplate(MarkdownEditor *editor);

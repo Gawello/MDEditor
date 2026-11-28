@@ -46,6 +46,7 @@ if(MDEDITOR_BUILD_APP)
         src/app/CloudDrivePage.cpp src/app/CloudDrivePage.h
         src/app/EditorTab.cpp src/app/EditorTab.h
         src/app/ExternalChangeBar.cpp src/app/ExternalChangeBar.h
+        src/app/Export.cpp src/app/Export.h
         src/app/FileActions.cpp src/app/FileActions.h
         src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
