@@ -153,7 +153,7 @@ void GraphView::rebuild()
             const QString target = m_index->resolveIndexed(written, noteLink.wiki, path); // no disk access
             if (target.isEmpty()) {
                 if (!m_settings.existingOnly && noteLink.wiki && !noteLink.embed)
-                    link(from, nodeFor(u"missing:" + written.toLower(), QFileInfo(written).completeBaseName(), Kind::Missing));
+                    link(from, nodeFor(QStringLiteral("missing:") + written.toLower(), QFileInfo(written).completeBaseName(), Kind::Missing));
                 continue;
             }
             if (ids.contains(target)) {
@@ -165,7 +165,7 @@ void GraphView::rebuild()
         if (m_settings.tags) {
             for (const std::u16string &tag : note->scan.tags) {
                 const QString name = QString::fromStdU16String(tag);
-                link(from, nodeFor(u"tag:" + name.toLower(), u'#' + name, Kind::Tag));
+                link(from, nodeFor(QStringLiteral("tag:") + name.toLower(), u'#' + name, Kind::Tag));
             }
         }
     }
