@@ -24,8 +24,10 @@ int main(int argc, char *argv[])
         if (!filter.empty() && std::string(c.name).find(filter) == std::string::npos)
             continue;
         const int before = test::failures();
+        // Flushed before and after: a crash then shows which test it was (Windows buffers piped output).
+        std::cout << "[ RUN ] " << c.name << std::endl;
         c.fn();
-        std::cout << (test::failures() == before ? "[ OK ] " : "[FAIL] ") << c.name << "\n";
+        std::cout << (test::failures() == before ? "[ OK ] " : "[FAIL] ") << c.name << std::endl;
     }
     std::cout << test::registry().size() << " test cases, " << test::failures() << " failed checks\n";
 
