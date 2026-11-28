@@ -19,7 +19,7 @@ any text file can be edited, not just Markdown.
 |---|---|---|---|---|
 | Live Preview (rendered, markers on the cursor line) | ✅ | Core of the app | | |
 | Source mode (raw Markdown, still highlighted) | 🟡 | Ctrl+E switches to plain text without colors | P2 | S |
-| Reading view (rendered, read-only, no markers anywhere) | ❌ | | P2 | M |
+| Reading view (rendered, read-only, no markers anywhere) | ✅ | View → Reading Mode; no math or footnotes yet | | |
 | Headings, bold, italic, strikethrough, `==highlight==`, inline code | ✅ | | | |
 | Colored highlights (red, orange, yellow, green, blue, purple; new in 1.15) | ✅ | `==🔴text==`, as Obsidian writes it | | |
 | Bullet, numbered and task lists, nested | ✅ | | | |

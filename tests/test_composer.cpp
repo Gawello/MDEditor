@@ -8,7 +8,10 @@
 #include "notes/NoteIndex.h"
 
 #include <QApplication>
+#include <QAction>
 #include <QDir>
+#include <QTextBrowser>
+#include <QUrl>
 #include <QKeyEvent>
 #include <QElapsedTimer>
 #include <QFile>
@@ -136,4 +139,42 @@ TEST_CASE(block_links_give_blocks_their_id)
         tab->editor()->document()->setModified(false);
     window.close();
     AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), true);
+}
+
+TEST_CASE(reading_mode)
+{
+    CHECK(MarkdownEditor::excerpt(QStringLiteral("See [[Other#Part|the part]] and [[My Note]]"), {}, true)
+          == "See [the part](Other#Part) and [My Note](My%20Note)");
+    QSettings().remove(QStringLiteral("session"));
+    QSettings().remove(QStringLiteral("window"));
+    QTemporaryDir dir;
+    const QString home = dir.filePath(QStringLiteral("Home.md"));
+    writeNote(home, "---\ntags: [x]\n---\n# Home\n> [!tip] Handy\n> body\n\nGo to [[Other]].\n");
+    writeNote(dir.filePath(QStringLiteral("Other.md")), "# Other\n");
+    MainWindow window;
+    window.show();
+    CHECK(window.openFile(home));
+    EditorTab *tab = tabOf(window, home);
+    QAction *reading = nullptr;
+    for (QAction *action : window.findChildren<QAction *>()) {
+        if (action->text().remove(u'&') == QStringLiteral("Reading Mode"))
+            reading = action;
+    }
+    CHECK(reading != nullptr);
+    if (!reading)
+        return;
+    reading->trigger();
+    CHECK(tab->isReading() && !tab->editor()->isVisible());
+    const QString shown = tab->reader()->toPlainText();
+    CHECK(shown.contains("Handy") && shown.contains("Go to Other.") && !shown.contains("tags") && !shown.contains("[["));
+    // Its links follow like the editor's.
+    emit tab->reader()->anchorClicked(QUrl(QStringLiteral("Other")));
+    EditorTab *other = tabOf(window, dir.filePath(QStringLiteral("Other.md")));
+    CHECK(other != nullptr);
+    window.openFile(home);
+    reading->trigger();
+    CHECK(!tab->isReading() && tab->editor()->isVisible());
+    for (EditorTab *each : window.findChildren<EditorTab *>())
+        each->editor()->document()->setModified(false);
+    window.close();
 }

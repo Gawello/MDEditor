@@ -474,6 +474,15 @@ void MainWindow::createMenus()
                                                                                 : QPlainTextEdit::NoWrap);
     });
     wordWrap->setCheckable(true);
+    QAction *reading = view->addAction(tr("Reading &Mode"), this, [this] {
+        if (EditorTab *tab = currentTab())
+            setReading(tab, !tab->isReading());
+    });
+    reading->setCheckable(true);
+    connect(view, &QMenu::aboutToShow, reading, [this, reading] {
+        reading->setChecked(currentTab() && currentTab()->isReading());
+        reading->setEnabled(markdownEditor() != nullptr);
+    });
     QAction *lineNumbers = view->addAction(tr("Line Numb&ers"), this, [] {
         AppSettings &settings = AppSettings::instance();
         settings.setValue(QString::fromLatin1(AppSettings::lineNumbersKey), !settings.lineNumbers());
@@ -1270,6 +1279,7 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
     connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
     connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
     connect(tab->editor(), &MarkdownEditor::deleteFileRequested, this, &MainWindow::deletePath);
+    connect(tab, &EditorTab::readerLinkClicked, tab, [tab](const QString &target) { tab->editor()->openLink(target); });
     connect(tab, &EditorTab::renameRequested, this, [this, tab](const QString &name) {
         // Queued: the rename may ask about links, and the title field is still finishing its edit.
         QMetaObject::invokeMethod(this, [this, guard = QPointer<EditorTab>(tab), name] {
@@ -2179,15 +2189,45 @@ void MainWindow::exportNote(bool pdf)
     MarkdownEditor *editor = markdownEditor();
     if (!tab || !editor)
         return;
-    const QString name = tab->isUntitled() ? tr("Untitled") : QFileInfo(tab->filePath()).completeBaseName();
-    const QString folder = tab->isUntitled() ? dialogDirectory() : QFileInfo(tab->filePath()).absolutePath();
+    const Export::Options options = exportOptions(tab);
+    const QString name = options.title;
+    const QString folder = options.folder;
     const QString suffix = pdf ? QStringLiteral("pdf") : QStringLiteral("html");
     const QString path = QFileDialog::getSaveFileName(this, pdf ? tr("Export to PDF") : tr("Export to HTML"),
                                                       QDir(folder).filePath(name + u'.' + suffix),
                                                       pdf ? tr("PDF (*.pdf)") : tr("Web page (*.html *.htm)"));
     if (path.isEmpty())
         return;
-    Export::Options options{name, folder, editor->font(), 0, {}};
+    QString error;
+    const bool ok = pdf ? Export::toPdf(editor->markdown(), options, path, &error)
+                        : Export::toHtml(editor->markdown(), options, path, &error);
+    if (!ok)
+        QMessageBox::warning(this, pdf ? tr("Export to PDF") : tr("Export to HTML"),
+                             tr("Cannot write %1:\n%2").arg(QDir::toNativeSeparators(path), error));
+    else
+        statusBar()->showMessage(tr("Exported to %1").arg(QDir::toNativeSeparators(path)), 8000);
+}
+
+void MainWindow::setReading(EditorTab *tab, bool reading)
+{
+    if (!tab)
+        return;
+    if (!reading || !tab->editor()->markdownMode()) {
+        tab->showReader(nullptr);
+        return;
+    }
+    Export::Options options = exportOptions(tab);
+    options.title.clear(); // the inline title shows it already
+    options.links = true;
+    options.pageWidth = std::max(200, tab->width() - 2 * tab->editor()->viewport()->geometry().left() - 60);
+    tab->showReader(Export::document(tab->editor()->markdown(), options));
+}
+
+Export::Options MainWindow::exportOptions(EditorTab *tab) const
+{
+    const QString name = tab->isUntitled() ? tr("Untitled") : QFileInfo(tab->filePath()).completeBaseName();
+    const QString folder = tab->isUntitled() ? dialogDirectory() : QFileInfo(tab->filePath()).absolutePath();
+    Export::Options options{name, folder, tab->editor()->font(), 0, {}};
     // Embedded notes go in with their text (found as links are: anywhere in the open folder).
     const QString from = tab->isUntitled() ? QDir(folder).filePath(QStringLiteral("untitled.md")) : tab->filePath();
     options.embed = [index = QPointer<NoteIndex>(m_index), from](const QString &target) -> QString {
@@ -2200,14 +2240,7 @@ void MainWindow::exportNote(bool pdf)
         text.remove(u'\r');
         return MarkdownEditor::excerpt(text, target.section(u'#', 1));
     };
-    QString error;
-    const bool ok = pdf ? Export::toPdf(editor->markdown(), options, path, &error)
-                        : Export::toHtml(editor->markdown(), options, path, &error);
-    if (!ok)
-        QMessageBox::warning(this, pdf ? tr("Export to PDF") : tr("Export to HTML"),
-                             tr("Cannot write %1:\n%2").arg(QDir::toNativeSeparators(path), error));
-    else
-        statusBar()->showMessage(tr("Exported to %1").arg(QDir::toNativeSeparators(path)), 8000);
+    return options;
 }
 
 void MainWindow::updateBacklinkCount()

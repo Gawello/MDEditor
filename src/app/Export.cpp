@@ -94,7 +94,8 @@ static QString prepare(const QString &markdown, const Options &options)
 
 QTextDocument *document(const QString &markdown, const Options &options)
 {
-    QString text = MarkdownEditor::excerpt(prepare(markdown, options), {}); // no front matter, [[links]] as text
+    // No front matter; [[links]] as text (or links)
+    QString text = MarkdownEditor::excerpt(prepare(markdown, options), {}, options.links);
     if (!options.title.isEmpty() && !text.trimmed().startsWith(QStringLiteral("# ")))
         text = QStringLiteral("# ") + options.title + QStringLiteral("\n\n") + text;
     auto *document = new QTextDocument;

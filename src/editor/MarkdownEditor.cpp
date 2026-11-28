@@ -1157,7 +1157,7 @@ bool MarkdownEditor::previewLink(const QString &target, const QPoint &globalPos,
     return true;
 }
 
-QString MarkdownEditor::excerpt(const QString &text, const QString &anchor)
+QString MarkdownEditor::excerpt(const QString &text, const QString &anchor, bool keepLinks)
 {
     const md::NoteScan scan = md::scanNote(toView(text));
     QStringList lines = text.split(u'\n');
@@ -1205,13 +1205,20 @@ QString MarkdownEditor::excerpt(const QString &text, const QString &anchor)
             width.toInt(&number);
             result += QStringLiteral("![image%1](%2)")
                           .arg(number ? u'|' + width : QString(), QString::fromUtf8(QUrl::toPercentEncoding(target, "/")));
-        } else if (!match.captured(4).isEmpty()) {
-            result += match.captured(4);
         } else {
-            QString name = QFileInfo(target).completeBaseName();
-            if (name.isEmpty())
-                name = target;
-            result += section.isEmpty() ? name : (name.isEmpty() ? section : name + QStringLiteral(" › ") + section);
+            QString shown = match.captured(4);
+            if (shown.isEmpty()) {
+                QString name = QFileInfo(target).completeBaseName();
+                if (name.isEmpty())
+                    name = target;
+                shown = section.isEmpty() ? name : (name.isEmpty() ? section : name + QStringLiteral(" › ") + section);
+            }
+            if (keepLinks) { // the target as written, so following it resolves like the link itself
+                const QString written = section.isEmpty() ? target : target + u'#' + section;
+                result += QStringLiteral("[%1](%2)").arg(shown, QString::fromUtf8(QUrl::toPercentEncoding(written, "/#^")));
+            } else {
+                result += shown;
+            }
         }
         done = match.capturedEnd();
     }

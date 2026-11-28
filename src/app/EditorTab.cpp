@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QTextBrowser>
+#include <QTextFrame>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -72,6 +74,46 @@ EditorTab::EditorTab(QWidget *parent)
             emit statusMessage(tr("Cannot reload %1: %2").arg(displayName(), error));
     });
     connect(m_changeBar, &ExternalChangeBar::keepRequested, this, &EditorTab::keepMyVersion);
+}
+
+void EditorTab::showReader(QTextDocument *document)
+{
+    if (!document) {
+        if (m_reader)
+            m_reader->hide();
+        m_editor->show();
+        m_editor->setFocus();
+        return;
+    }
+    if (!m_reader) {
+        m_reader = new QTextBrowser(this);
+        m_reader->setFrameShape(QFrame::NoFrame);
+        m_reader->setOpenLinks(false);
+        connect(m_reader, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
+            emit readerLinkClicked(url.scheme().size() > 1 ? url.toString() : QUrl::fromPercentEncoding(url.toString().toUtf8()));
+        });
+        static_cast<QVBoxLayout *>(layout())->insertWidget(layout()->indexOf(m_editor), m_reader, 1);
+    }
+    QTextDocument *old = m_reader->document();
+    document->setParent(m_reader);
+    m_reader->setDocument(document);
+    if (old && old != document && old->parent() == m_reader)
+        old->deleteLater();
+    // The text column of the editor: the same margins and font.
+    document->setDocumentMargin(m_editor->document()->documentMargin());
+    QTextFrameFormat frame = document->rootFrame()->frameFormat();
+    const int side = m_editor->viewport()->geometry().left() + int(m_editor->document()->documentMargin());
+    frame.setLeftMargin(side);
+    frame.setRightMargin(side);
+    document->rootFrame()->setFrameFormat(frame);
+    m_editor->hide();
+    m_reader->show();
+    m_reader->setFocus();
+}
+
+bool EditorTab::isReading() const
+{
+    return m_reader && m_reader->isVisible();
 }
 
 void EditorTab::updateTitle()

@@ -19,6 +19,7 @@ struct Options {
     // The text of a note an embed (![[Note]], ![[Note#Heading]]) shows, already cut to the section; empty when
     // there's none. Without it embeds show the note's name.
     std::function<QString(const QString &target)> embed;
+    bool links = false; // [[links]] as links (the reading view), not text
 };
 
 // The caller owns the document.

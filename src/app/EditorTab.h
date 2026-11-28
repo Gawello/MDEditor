@@ -9,6 +9,8 @@
 class ExternalChangeBar;
 class FindBar;
 class QLineEdit;
+class QTextBrowser;
+class QTextDocument;
 class MarkdownEditor;
 
 // One open file: the editor widget plus the file it's bound to.
@@ -55,6 +57,12 @@ public:
     // The file was renamed or moved on disk by the app: keeps the contents and the modified state.
     void setFilePath(const QString &path);
 
+    // Obsidian's reading view: the note rendered, read-only, links clickable. `document` replaces the shown one
+    // (the tab owns it); null goes back to editing.
+    void showReader(QTextDocument *document);
+    bool isReading() const;
+    QTextBrowser *reader() const { return m_reader; }
+
     // The same file shown in another pane: `twin` starts as a copy of this tab, and from then on every edit in
     // either is mirrored to the other, and a save or reload in one counts for both.
     void openTwin(EditorTab *twin);
@@ -68,6 +76,7 @@ public:
 signals:
     void stateChanged(); // file path or modified flag changed
     void renameRequested(const QString &newName); // the inline title was edited: "Name.md"
+    void readerLinkClicked(const QString &target); // a link in the reading view, as written
     void statusMessage(const QString &message);
     void diskCheckFinished();
 
@@ -92,6 +101,7 @@ private:
     FindBar *m_findBar;
     ExternalChangeBar *m_changeBar;
     QLineEdit *m_title;
+    QTextBrowser *m_reader = nullptr;
     Document m_document;
     QFutureWatcher<DiskCheck> m_diskCheck;
     QString m_checkedPath;

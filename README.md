@@ -60,6 +60,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   most every 5 minutes, for 7 days; Settings → Notes), and any of them can be brought back
 - File → Export to PDF (A4) or HTML: the note rendered without its front matter, with embedded notes' text, callout
   titles, and images fitted to the page (width hints kept)
+- View → Reading Mode: the note rendered read-only (callouts, embedded notes, images), its links clickable
 - Line numbers (View → Line Numbers, or Settings → Editor), next to the text column
 - Slash commands: `/` at the start of a line or after a space lists every menu command, filtered as you type;
   Enter runs it (Settings → Editor)

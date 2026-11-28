@@ -138,7 +138,8 @@ public:
     std::optional<QRectF> imageRect(const QTextBlock &block) const;
     // What an embed or a preview shows of a note: without the front matter, only the section (`Heading`) or
     // block (`^id`) when `anchor` names one, and [[links]] as their text, which QTextDocument can't show.
-    static QString excerpt(const QString &text, const QString &anchor);
+    // `keepLinks`: [[links]] become Markdown links (to their target as written) instead of text.
+    static QString excerpt(const QString &text, const QString &anchor, bool keepLinks = false);
     // Ctrl+hover: shows the note `target` links to under `globalPos`, next to the line `lineRect` (global).
     // False when it isn't a note that can be shown.
     bool previewLink(const QString &target, const QPoint &globalPos, const QRect &lineRect);

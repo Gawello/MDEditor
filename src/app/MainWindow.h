@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/Export.h"
 #include "app/NavigationHistory.h"
 #include "app/PaletteDialog.h"
 #include "editor/CompletionPopup.h"
@@ -148,6 +149,8 @@ private:
     void updateWordCount();
     void updateBacklinkCount();
     void exportNote(bool pdf); // File → Export to PDF / HTML
+    Export::Options exportOptions(EditorTab *tab) const; // the note's name, folder, font, and its embeds' text
+    void setReading(EditorTab *tab, bool reading);
     void recordSnapshot(EditorTab *tab, bool force); // version history, in the background
     void showVersionHistory(EditorTab *tab);
     void openDailyNote();
