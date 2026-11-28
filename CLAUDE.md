@@ -183,6 +183,8 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   `MainWindow::followLink` creates a missing note, opens it (or `openToTheRight`), and scrolls to
   `NoteIndex::findAnchor` (headings by text or slug, `^block` ids) with `scrollToLine`. Aliases live in
   `NoteIndex::m_byAlias` and are tried after file names.
+- Auto-pairing: `md::pairFor`/`deletesPair` (Qt-free) decide, `MarkdownEditor::autoPair` (start of `keyPressEvent`)
+  edits; brackets in every mode, Markdown markers only in Markdown mode; AltGr (Ctrl+Alt) counts as typing.
 - Suggestions: `md::completionAt` (Qt-free) says what's being typed at the cursor; `Completions::suggest` ranks
   index entries (`NoteIndex::entries()`: name and folder worked out once per scan; it runs on every key, ~30 ms for
   20k notes in a debug build); `CompletionPopup` is a `Qt::ToolTip` window that never takes the focus, the editor
@@ -348,6 +350,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Plugin `QJSEngine`s must be destroyed before `QApplication` (`PluginManager::shutdown()` in `main`), and a
   `QJSValue` must not outlive its engine (in `PluginManager::Plugin` the engine is declared before the
   `QJSValue` members, so it is destroyed after them).
+- A background result arrives through the event queue: the worker can be done while its `finished` signal still
+  waits. `NoteIndex::scanning()` is a flag cleared when the result is taken in (not `QFutureWatcher::isRunning()`),
+  and `runInBackground` starts its promise before the thread, so a fresh future reports "running" at once.
 - `QTextBlock`s in a replaced range are invalid afterwards (`blockNumber()` is wrong): save numbers before `insertText`.
 - `QSyntaxHighlighter` format changes emit `contentsChange` too. Don't drive re-highlighting from that signal
   (it can loop); use the highlighter itself (see `recheckPreviousBlock`).

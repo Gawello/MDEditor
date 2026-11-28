@@ -265,7 +265,7 @@ settings in new window ➖.
 | Indentation guides | ❌ |
 | Right-to-left | ❌ |
 | Spellcheck, Spellcheck languages | ✅ |
-| Auto-pair brackets, Auto-pair Markdown syntax | ❌ |
+| Auto-pair brackets, Auto-pair Markdown syntax | ✅ |
 | Smart lists | ✅ always on |
 | Indent using tabs, Indent visual width | 🟡 |
 | Convert pasted HTML to Markdown (Ctrl+Shift+V pastes without) | ❌ |

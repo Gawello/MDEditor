@@ -148,6 +148,7 @@ protected:
     bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
+    bool autoPair(QKeyEvent *event); // brackets, quotes, Markdown markers; true if it handled the key
     void mousePressEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;

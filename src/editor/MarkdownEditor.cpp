@@ -6,6 +6,7 @@
 #include "editor/LivePreviewHighlighter.h"
 #include "format/CodeFormatters.h"
 #include "format/FormatterRegistry.h"
+#include "markdown/AutoPair.h"
 #include "markdown/InlineParser.h"
 #include "markdown/NoteScan.h"
 #include "markdown/TableEdit.h"
@@ -383,6 +384,8 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
             break;
         }
     }
+    if (autoPair(event))
+        return updateCompletion(true); // "[" makes "[]": the second one may start a [[link]]
     if (key == Qt::Key_Escape && m_preview && m_preview->isVisible()) {
         m_preview->hide();
         return;
@@ -418,6 +421,76 @@ void MarkdownEditor::keyPressEvent(QKeyEvent *event)
     }
 
     QPlainTextEdit::keyPressEvent(event);
+}
+
+bool MarkdownEditor::autoPair(QKeyEvent *event)
+{
+    if (isReadOnly())
+        return false;
+    const auto modifiers = event->modifiers() & ~(Qt::KeypadModifier | Qt::ShiftModifier);
+    // AltGr (Ctrl+Alt on Windows) types brackets on many keyboards; plain Ctrl or Alt are shortcuts.
+    const bool typing = modifiers == Qt::NoModifier || modifiers == (Qt::ControlModifier | Qt::AltModifier)
+                        || modifiers == Qt::GroupSwitchModifier;
+    md::PairOptions options{AppSettings::instance().autoPairBrackets(), m_markdown && AppSettings::instance().autoPairMarkdown()};
+    if (!options.brackets && !options.markdown)
+        return false;
+    QTextCursor cursor = textCursor();
+    const QTextBlock block = cursor.block();
+    const QString line = block.text();
+
+    if (event->key() == Qt::Key_Backspace && modifiers == Qt::NoModifier && !cursor.hasSelection()) {
+        const int at = cursor.positionInBlock();
+        if (!md::deletesPair(toView(line).substr(0, size_t(at)), toView(line).substr(size_t(at)), options))
+            return false;
+        cursor.beginEditBlock();
+        cursor.movePosition(QTextCursor::Left);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 2);
+        cursor.removeSelectedText();
+        cursor.endEditBlock();
+        setTextCursor(cursor);
+        return true;
+    }
+    if (!typing || event->text().size() != 1)
+        return false;
+    const char16_t typed = event->text().at(0).unicode();
+    const bool selection = cursor.hasSelection();
+    if (selection && document()->findBlock(cursor.selectionEnd()) != document()->findBlock(cursor.selectionStart()))
+        return false; // across lines: typing replaces it as usual
+    const int start = cursor.selectionStart() - block.position();
+    const int end = cursor.selectionEnd() - block.position();
+    const md::PairDecision decision = md::pairFor(typed, toView(line).substr(0, size_t(start)),
+                                                  toView(line).substr(size_t(end)), selection, options);
+    switch (decision.action) {
+    case md::PairAction::None:
+        return false;
+    case md::PairAction::Skip:
+        cursor.movePosition(QTextCursor::Right);
+        setTextCursor(cursor);
+        return true;
+    case md::PairAction::Insert:
+        cursor.beginEditBlock();
+        cursor.insertText(QString(QChar(decision.open)) + QChar(decision.close));
+        cursor.endEditBlock();
+        cursor.movePosition(QTextCursor::Left);
+        setTextCursor(cursor);
+        return true;
+    case md::PairAction::Wrap: {
+        const int from = cursor.selectionStart();
+        const int to = cursor.selectionEnd();
+        cursor.beginEditBlock();
+        cursor.setPosition(to);
+        cursor.insertText(QString(QChar(decision.close)));
+        cursor.setPosition(from);
+        cursor.insertText(QString(QChar(decision.open)));
+        cursor.endEditBlock();
+        // The text stays selected, so "*" again makes it bold.
+        cursor.setPosition(from + 1);
+        cursor.setPosition(to + 1, QTextCursor::KeepAnchor);
+        setTextCursor(cursor);
+        return true;
+    }
+    }
+    return false;
 }
 
 void MarkdownEditor::focusOutEvent(QFocusEvent *event)

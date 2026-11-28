@@ -49,8 +49,8 @@ any text file can be edited, not just Markdown.
 | Obsidian | MDEditor | Notes | Prio | Effort |
 |---|---|---|---|---|
 | Smart lists (continue, indent with Tab) | ✅ | | | |
-| Auto-pair brackets and quotes | ❌ | | P1 | S |
-| Auto-pair Markdown syntax (`**`, `` ` ``, `==`) | ❌ | | P1 | S |
+| Auto-pair brackets and quotes | ✅ | Also in plain-text files | | |
+| Auto-pair Markdown syntax (`**`, `` ` ``, `==`) | ✅ | Wraps a selection; `` ` `` pairs | | |
 | Fold headings | ✅ | | | |
 | Fold indentation (lists) | ✅ | | | |
 | Line numbers | ❌ | Useful for code files | P2 | S |

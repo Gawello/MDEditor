@@ -444,6 +444,18 @@ QWidget *SettingsDialog::createEditorPage()
     });
     form->addRow(tr("Encoding of other files"), encoding);
 
+    const auto toggle = [&](const QString &text, const char *key, bool on) {
+        auto *box = new QCheckBox(text, page);
+        box->setChecked(on);
+        const QString name = QString::fromLatin1(key);
+        connect(box, &QCheckBox::toggled, this, [name](bool checked) { AppSettings::instance().setValue(name, checked); });
+        return box;
+    };
+    form->addRow(QString(), toggle(tr("Close brackets and quotes as they are typed"), AppSettings::autoPairBracketsKey,
+                                   AppSettings::instance().autoPairBrackets()));
+    form->addRow(QString(), toggle(tr("Close `code` and wrap a selection in **, ==, ~, $ as they are typed"),
+                                   AppSettings::autoPairMarkdownKey, AppSettings::instance().autoPairMarkdown()));
+
     layout->addLayout(form);
     layout->addWidget(hint(tr("Pasted images are saved in this folder, next to the note.")));
     layout->addWidget(hint(tr("Files are read as UTF-8 when they are valid UTF-8 or start with a byte order mark, "

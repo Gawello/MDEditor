@@ -42,12 +42,13 @@ void NoteIndex::refresh()
 {
     if (m_root.isEmpty())
         return;
-    if (m_watcher.isRunning()) {
+    if (m_scanning) { // running, or its result not taken in yet
         m_again = true;
         return;
     }
     const QString root = m_root;
     const Notes previous = m_notes;
+    m_scanning = true;
     m_watcher.setFuture(runInBackground([root, previous] { return scan(root, previous); }));
 }
 
@@ -111,6 +112,7 @@ void NoteIndex::finished()
         m_backlinksDirty = true;
         emit changed();
     }
+    m_scanning = false;
     if (m_again) {
         m_again = false;
         refresh();

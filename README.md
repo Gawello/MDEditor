@@ -48,6 +48,9 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,
   `[[Note#^` its block ids, `#ta` the tags in use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
+- Brackets and quotes close themselves (`(`, `[`, `{`, `"`, `'` at the start of a word, `` ` ``), typing the closing
+  one steps over it, Backspace in an empty pair removes both; a selection is wrapped by typing `*`, `=`, `~`, `$`,
+  `` ` `` or a bracket (Settings → Editor)
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`
   groups, all matches highlighted, Replace All as one undo step

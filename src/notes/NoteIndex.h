@@ -32,7 +32,8 @@ public:
     void setRoot(const QString &root); // empty: no folder
     QString root() const { return m_root; }
     void refresh();                    // scans again in the background (no-op while a scan runs: queued)
-    bool scanning() const { return m_watcher.isRunning(); }
+    // Until the scan's result is in: the thread may be done while its result still waits in the event queue.
+    bool scanning() const { return m_scanning; }
     // An open tab changed or saved its note: use its text right away.
     void update(const QString &path, const QString &text);
 
@@ -104,4 +105,5 @@ private:
     mutable bool m_backlinksDirty = true;
     QFutureWatcher<Result> m_watcher;
     bool m_again = false;
+    bool m_scanning = false;
 };

@@ -20,8 +20,10 @@ auto runInBackground(Work work)
     using Result = std::invoke_result_t<Work>;
     QPromise<Result> promise;
     QFuture<Result> future = promise.future();
+    // Started here, not on the thread: the future must report "running" as soon as this returns (a watcher's
+    // isRunning() is how callers tell that work is pending).
+    promise.start();
     std::thread([promise = std::move(promise), work = std::move(work)]() mutable {
-        promise.start();
         promise.addResult(work());
         promise.finish();
     }).detach();

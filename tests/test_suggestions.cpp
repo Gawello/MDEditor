@@ -1,4 +1,5 @@
 #include "TestHarness.h"
+#include "app/AppSettings.h"
 #include "editor/CompletionPopup.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/Completions.h"
@@ -10,6 +11,7 @@
 #include <QFile>
 #include <QKeyEvent>
 #include <QListWidget>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 namespace {
@@ -121,6 +123,10 @@ TEST_CASE(suggestions_for_notes_headings_blocks_tags)
 
 TEST_CASE(typing_brackets_shows_and_inserts_suggestions)
 {
+    // Without auto-pairing here ("[[" stays open); typing_with_pairs_and_suggestions has both.
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), false);
+    const auto restore = qScopeGuard(
+        [] { AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), true); });
     Folder folder;
     NoteIndex *index = &folder.index;
     MarkdownEditor::setCompletionProvider([index](const md::CompletionContext &c, const QString &from, const QString &text) {
@@ -205,5 +211,25 @@ TEST_CASE(typing_brackets_shows_and_inserts_suggestions)
     editor.setMarkdownMode(false);
     type(editor, "[[Bet");
     CHECK(!popupShown(editor));
+    MarkdownEditor::setCompletionProvider({});
+}
+
+TEST_CASE(typing_with_pairs_and_suggestions)
+{
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), true);
+    Folder folder;
+    NoteIndex *index = &folder.index;
+    MarkdownEditor::setCompletionProvider([index](const md::CompletionContext &c, const QString &from, const QString &text) {
+        return Completions::suggest(*index, c, from, text);
+    });
+    MarkdownEditor editor;
+    editor.setDocumentPath(folder.path("Home.md"));
+    type(editor, "See [[Bet");
+    CHECK(editor.markdown() == "See [[Bet]]"); // the brackets closed themselves
+    CHECK(popupShown(editor));
+    key(editor, Qt::Key_Return);
+    CHECK(editor.markdown() == "See [[Beta]]" && editor.textCursor().atEnd());
+    editor.undo();
+    CHECK(editor.markdown() == "See [[Bet]]");
     MarkdownEditor::setCompletionProvider({});
 }
