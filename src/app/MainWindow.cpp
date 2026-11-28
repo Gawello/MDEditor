@@ -232,6 +232,14 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderPanel, &FolderPanel::newFolderRequested, this, &MainWindow::newFolder);
     connect(m_folderPanel, &FolderPanel::rootRequested, this, &MainWindow::openFolder);
     connect(m_folderPanel, &FolderPanel::moveRequested, this, &MainWindow::movePath);
+    connect(m_folderPanel, &FolderPanel::moveManyRequested, this, &MainWindow::moveMany);
+    connect(m_folderPanel, &FolderPanel::deleteManyRequested, this, &MainWindow::deleteMany);
+    connect(m_folderPanel, &FolderPanel::searchInFolderRequested, this, [this](const QString &folder) {
+        m_sideBar->show();
+        m_sideBar->showPage(m_search);
+        m_search->setScope(folder);
+        m_search->focusSearch();
+    });
 
     m_cloudDrive = new CloudDrive(this);
     m_updates = new UpdateController(this);
@@ -2203,7 +2211,7 @@ void MainWindow::movePath(const QString &path, const QString &folder)
         statusBar()->showMessage(tr("Moved %1 to %2").arg(QFileInfo(path).fileName(), QDir::toNativeSeparators(destination)), 5000);
 }
 
-bool MainWindow::relocate(const QString &path, const QString &target, const QString &title)
+bool MainWindow::relocate(const QString &path, const QString &target, const QString &title, QHash<QString, QString> *collect)
 {
     const bool sameFolder = QFileInfo(path).absolutePath() == QFileInfo(target).absolutePath();
     const FileActions::Result result = sameFolder ? FileActions::rename(path, target, this)
@@ -2228,8 +2236,12 @@ bool MainWindow::relocate(const QString &path, const QString &target, const QStr
             if (file == oldClean || file.startsWith(oldClean + u'/'))
                 moved.insert(file, result.path + file.mid(oldClean.size()));
         }
-        updateLinksAfterMove(moved);
-        m_index->refresh();
+        if (collect) {
+            collect->insert(moved);
+        } else {
+            updateLinksAfterMove(moved);
+            m_index->refresh();
+        }
     }
     if (FileActions::isSameOrInside(m_folderPanel->rootPath(), path))
         m_folderPanel->setRootPath(result.path + m_folderPanel->rootPath().mid(QDir::cleanPath(path).size()));
@@ -2367,6 +2379,76 @@ void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved)
         QMessageBox::warning(this, tr("Update Links"), tr("Some links couldn't be updated:\n%1").arg(failures.join(u'\n')));
     else
         statusBar()->showMessage(linkCount == 1 ? tr("Updated 1 link") : tr("Updated %1 links").arg(linkCount), 5000);
+}
+
+void MainWindow::moveMany(const QStringList &paths, const QString &folder)
+{
+    if (paths.isEmpty())
+        return;
+    const QString start = m_folderPanel->rootPath().isEmpty() ? QFileInfo(paths.front()).absolutePath() : m_folderPanel->rootPath();
+    const QString destination = !folder.isEmpty() ? folder
+                                                  : QFileDialog::getExistingDirectory(this, tr("Move %1 Items To").arg(paths.size()), start);
+    if (destination.isEmpty())
+        return;
+    QHash<QString, QString> moved;
+    int done = 0;
+    for (const QString &path : paths) {
+        if (FileActions::isSameOrInside(destination, path))
+            continue; // a folder into itself
+        const QString target = QDir(destination).filePath(QFileInfo(path).fileName());
+        if (RecentFiles::samePath(QDir::cleanPath(target), QDir::cleanPath(path)))
+            continue;
+        if (!QFileInfo::exists(path))
+            continue; // inside a folder moved just before
+        if (relocate(path, target, tr("Move"), &moved))
+            ++done;
+    }
+    updateLinksAfterMove(moved); // one question for all of them
+    m_index->refresh();
+    statusBar()->showMessage(tr("Moved %1 items to %2").arg(done).arg(QDir::toNativeSeparators(destination)), 5000);
+}
+
+void MainWindow::deleteMany(const QStringList &paths)
+{
+    if (paths.isEmpty())
+        return;
+    bool unsaved = false;
+    for (EditorTab *tab : allTabs()) {
+        for (const QString &path : paths)
+            unsaved = unsaved || (FileActions::isSameOrInside(tab->filePath(), path) && tab->isModified());
+    }
+    QString question = tr("Delete %1 items? They will be moved to the trash.").arg(paths.size());
+    if (unsaved)
+        question += QStringLiteral("\n\n") + tr("Unsaved changes in their open tabs will be lost.");
+    QMessageBox box(QMessageBox::Question, tr("Delete"), question, QMessageBox::Cancel, this);
+    box.setDetailedText(paths.join(u'\n'));
+    QPushButton *remove = box.addButton(tr("Delete"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    if (box.clickedButton() != remove)
+        return;
+    QStringList failed;
+    for (const QString &path : paths) {
+        if (!QFileInfo::exists(path))
+            continue; // inside a folder deleted just before
+        const FileActions::Result result = FileActions::moveToTrash(path, this);
+        if (!result.ok) {
+            failed << tr("%1: %2").arg(QDir::toNativeSeparators(path), result.error);
+            continue;
+        }
+        for (EditorTab *tab : allTabs()) {
+            if (FileActions::isSameOrInside(tab->filePath(), path))
+                discardTab(tab);
+        }
+        RecentFiles::remove(path);
+        Bookmarks::removed(path);
+        m_history.remove(QDir::cleanPath(path));
+    }
+    updateHistoryActions();
+    if (!failed.isEmpty())
+        QMessageBox::warning(this, tr("Delete"), tr("Some items couldn't be moved to the trash:\n%1").arg(failed.join(u'\n')));
+    else
+        statusBar()->showMessage(tr("Deleted %1 items").arg(paths.size()), 5000);
 }
 
 void MainWindow::deletePath(const QString &path)

@@ -3,6 +3,8 @@
 #include <QWidget>
 
 class NotesModel;
+class QModelIndex;
+class QSortFilterProxyModel;
 class QLabel;
 class QListWidget;
 class QTreeView;
@@ -22,6 +24,13 @@ public:
     bool startRename(const QString &path);
     // While the tree has the focus: renames its current item in place.
     bool renameCurrent();
+    // Name A–Z / Z–A, modified newest / oldest first (folders stay first); kept in the settings.
+    enum class Sort { NameAscending, NameDescending, ModifiedNewest, ModifiedOldest };
+    void setSort(Sort sort);
+    Sort sort() const { return m_sort; }
+    void collapseAll();
+    QStringList selectedPaths() const;
+    QTreeView *tree() const { return m_tree; }
 
 signals:
     void fileActivated(const QString &path);
@@ -35,6 +44,10 @@ signals:
     void rootRequested(const QString &folder);
     // `folder` empty: ask where to.
     void moveRequested(const QString &path, const QString &folder);
+    // Several selected items at once: one question for all of them.
+    void moveManyRequested(const QStringList &paths, const QString &folder); // folder empty: ask
+    void deleteManyRequested(const QStringList &paths);
+    void searchInFolderRequested(const QString &folder);
     void rootChanged(const QString &root);
 
 protected:
@@ -47,11 +60,15 @@ private:
     void showBookmarkMenu(const QPoint &pos);
     void refreshBookmarks();
 
+    QModelIndex source(const QModelIndex &index) const; // the tree's index in the file model
+    QModelIndex view(const QModelIndex &index) const;   // and back
     NotesModel *m_model;
+    QSortFilterProxyModel *m_proxy;
     QTreeView *m_tree;
     QLabel *m_title;
     QLabel *m_bookmarksTitle;
     QListWidget *m_bookmarks;
     QString m_root;
     bool m_applyingStyle = false;
+    Sort m_sort = Sort::NameAscending;
 };

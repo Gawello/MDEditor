@@ -9,6 +9,7 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QFileSystemModel>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -18,7 +19,10 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QUrl>
+#include <QCollator>
 #include <QScopedValueRollback>
+#include <QSortFilterProxyModel>
+#include <QSettings>
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -107,9 +111,44 @@ public:
     }
 };
 
+// The tree's order: folders first whatever the direction (QFileSystemModel puts them last when descending),
+// names in natural order ("2" before "10"), or the modification time.
+class SortProxy : public QSortFilterProxyModel {
+public:
+    explicit SortProxy(QObject *parent)
+        : QSortFilterProxyModel(parent)
+    {
+        m_collator.setNumericMode(true);
+        m_collator.setCaseSensitivity(Qt::CaseInsensitive);
+        setDynamicSortFilter(true);
+    }
+    bool byTime = false;
+
+protected:
+    bool lessThan(const QModelIndex &left, const QModelIndex &right) const override
+    {
+        const auto *model = static_cast<const QFileSystemModel *>(sourceModel());
+        const bool leftDir = model->isDir(left);
+        const bool rightDir = model->isDir(right);
+        if (leftDir != rightDir) // the sort flips the result when descending: flip it back for this rule
+            return (sortOrder() == Qt::AscendingOrder) ? leftDir : rightDir;
+        if (byTime) {
+            const QDateTime a = model->lastModified(left);
+            const QDateTime b = model->lastModified(right);
+            if (a != b)
+                return a < b;
+        }
+        return m_collator.compare(model->fileName(left), model->fileName(right)) < 0;
+    }
+
+private:
+    QCollator m_collator;
+};
+
 FolderPanel::FolderPanel(QWidget *parent)
     : QWidget(parent)
     , m_model(new NotesModel(this))
+    , m_proxy(new SortProxy(this))
     , m_tree(new QTreeView(this))
     , m_title(new QLabel(tr("No folder open"), this))
     , m_bookmarksTitle(new QLabel(tr("Bookmarks"), this))
@@ -127,12 +166,12 @@ FolderPanel::FolderPanel(QWidget *parent)
         QMetaObject::invokeMethod(this, [this, path, folder] { emit moveRequested(path, folder); }, Qt::QueuedConnection);
     };
 
-    m_tree->setModel(m_model);
+    m_proxy->setSourceModel(m_model);
+    m_tree->setModel(m_proxy);
     m_tree->setHeaderHidden(true);
     for (int column = 1; column < m_model->columnCount(); ++column)
         m_tree->hideColumn(column);
-    m_tree->setSortingEnabled(true);
-    m_tree->sortByColumn(0, Qt::AscendingOrder);
+    m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection); // Ctrl/Shift+click: several at once
     m_tree->setFrameShape(QFrame::NoFrame);
     m_tree->setIndentation(14);
     m_tree->setUniformRowHeights(true);
@@ -171,6 +210,33 @@ FolderPanel::FolderPanel(QWidget *parent)
             refreshBookmarks();
     });
 
+    // Sorting and collapsing, as Obsidian's file explorer toolbar has them.
+    auto *sortButton = new QToolButton(this);
+    sortButton->setText(QStringLiteral("⇅"));
+    sortButton->setToolTip(tr("Change sort order"));
+    sortButton->setAutoRaise(true);
+    sortButton->setPopupMode(QToolButton::InstantPopup);
+    auto *sortMenu = new QMenu(sortButton);
+    const std::pair<Sort, QString> sorts[] = {{Sort::NameAscending, tr("File Name (A to Z)")},
+                                              {Sort::NameDescending, tr("File Name (Z to A)")},
+                                              {Sort::ModifiedNewest, tr("Modified Time (New to Old)")},
+                                              {Sort::ModifiedOldest, tr("Modified Time (Old to New)")}};
+    for (const auto &[sort, label] : sorts) {
+        QAction *action = sortMenu->addAction(label, this, [this, sort] { setSort(sort); });
+        action->setCheckable(true);
+        action->setData(int(sort));
+    }
+    connect(sortMenu, &QMenu::aboutToShow, sortMenu, [this, sortMenu] {
+        for (QAction *action : sortMenu->actions())
+            action->setChecked(action->data().toInt() == int(m_sort));
+    });
+    sortButton->setMenu(sortMenu);
+    auto *collapseButton = new QToolButton(this);
+    collapseButton->setText(QStringLiteral("⊟"));
+    collapseButton->setToolTip(tr("Collapse all"));
+    collapseButton->setAutoRaise(true);
+    connect(collapseButton, &QToolButton::clicked, this, &FolderPanel::collapseAll);
+
     auto *openButton = new QToolButton(this);
     openButton->setText(QStringLiteral("…"));
     openButton->setToolTip(tr("Open folder"));
@@ -185,6 +251,8 @@ FolderPanel::FolderPanel(QWidget *parent)
     auto *header = new QHBoxLayout;
     header->setContentsMargins(12, 8, 6, 4);
     header->addWidget(m_title, 1);
+    header->addWidget(sortButton);
+    header->addWidget(collapseButton);
     header->addWidget(openButton);
 
     auto *layout = new QVBoxLayout(this);
@@ -198,14 +266,53 @@ FolderPanel::FolderPanel(QWidget *parent)
 
     // Single click opens a file, like in Obsidian; folders toggle.
     connect(m_tree, &QTreeView::clicked, this, [this](const QModelIndex &index) {
-        if (m_model->isDir(index))
+        // Ctrl/Shift+click builds a selection (to move or delete several), as in Obsidian: nothing opens.
+        if (QGuiApplication::keyboardModifiers() & (Qt::ControlModifier | Qt::ShiftModifier))
+            return;
+        if (m_model->isDir(source(index)))
             m_tree->setExpanded(index, !m_tree->isExpanded(index));
         else
-            emit fileActivated(m_model->filePath(index));
+            emit fileActivated(m_model->filePath(source(index)));
     });
 
     applyStyle();
     refreshBookmarks();
+    setSort(Sort(QSettings().value(QStringLiteral("explorer/sort"), int(Sort::NameAscending)).toInt()));
+}
+
+void FolderPanel::setSort(Sort sort)
+{
+    m_sort = sort;
+    QSettings().setValue(QStringLiteral("explorer/sort"), int(sort));
+    // QFileSystemModel's column 3 is the modification date; folders stay above files either way.
+    const bool byName = sort == Sort::NameAscending || sort == Sort::NameDescending;
+    const bool ascending = sort == Sort::NameAscending || sort == Sort::ModifiedOldest;
+    static_cast<SortProxy *>(m_proxy)->byTime = !byName;
+    m_proxy->invalidate();
+    m_proxy->sort(0, ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
+}
+
+void FolderPanel::collapseAll()
+{
+    m_tree->collapseAll();
+}
+
+QModelIndex FolderPanel::source(const QModelIndex &index) const
+{
+    return m_proxy->mapToSource(index);
+}
+
+QModelIndex FolderPanel::view(const QModelIndex &index) const
+{
+    return m_proxy->mapFromSource(index);
+}
+
+QStringList FolderPanel::selectedPaths() const
+{
+    QStringList paths;
+    for (const QModelIndex &index : m_tree->selectionModel()->selectedRows(0))
+        paths << m_model->filePath(source(index));
+    return paths;
 }
 
 void FolderPanel::refreshBookmarks()
@@ -246,7 +353,7 @@ void FolderPanel::setRootPath(const QString &path)
     m_root = QDir(path).absolutePath();
     m_model->root = m_root;
     m_model->setRootPath(m_root);
-    m_tree->setRootIndex(m_model->index(m_root));
+    m_tree->setRootIndex(view(m_model->index(m_root)));
     m_tree->setVisible(true);
     m_title->setText(QDir(m_root).dirName().isEmpty() ? m_root : QDir(m_root).dirName());
     m_title->setToolTip(QDir::toNativeSeparators(m_root));
@@ -257,7 +364,7 @@ void FolderPanel::selectFile(const QString &path)
 {
     if (m_root.isEmpty())
         return;
-    const QModelIndex index = m_model->index(path);
+    const QModelIndex index = view(m_model->index(path));
     if (index.isValid()) {
         m_tree->setCurrentIndex(index);
         m_tree->scrollTo(index); // expands the folders above it
@@ -268,7 +375,7 @@ bool FolderPanel::startRename(const QString &path)
 {
     if (m_root.isEmpty() || !FileActions::isSameOrInside(path, m_root))
         return false;
-    const QModelIndex index = m_model->index(path);
+    const QModelIndex index = view(m_model->index(path));
     if (!index.isValid())
         return false;
     m_tree->setCurrentIndex(index);
@@ -292,9 +399,14 @@ bool FolderPanel::eventFilter(QObject *watched, QEvent *event)
     // While a name is edited, keys go to the editor, not the tree.
     if (watched == m_tree && event->type() == QEvent::KeyPress
         && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Delete) {
+        const QStringList selected = selectedPaths();
+        if (selected.size() > 1) {
+            emit deleteManyRequested(selected);
+            return true;
+        }
         const QModelIndex index = m_tree->currentIndex();
         if (index.isValid()) {
-            emit deleteRequested(m_model->filePath(index));
+            emit deleteRequested(m_model->filePath(source(index)));
             return true;
         }
     }
@@ -307,8 +419,8 @@ void FolderPanel::showContextMenu(const QPoint &pos)
         return;
     const QModelIndex index = m_tree->indexAt(pos);
     const bool item = index.isValid();
-    const QString path = item ? m_model->filePath(index) : m_root;
-    const bool folder = !item || m_model->isDir(index);
+    const QString path = item ? m_model->filePath(source(index)) : m_root;
+    const bool folder = !item || m_model->isDir(source(index));
     const QString parent = folder ? path : QFileInfo(path).absolutePath();
 
     QMenu menu(this);
@@ -317,6 +429,22 @@ void FolderPanel::showContextMenu(const QPoint &pos)
     const auto add = [&](QMenu *to, const QString &text, std::function<void()> run) {
         return to->addAction(text, this, [this, run] { QMetaObject::invokeMethod(this, run, Qt::QueuedConnection); });
     };
+    // Several items selected, the click on one of them: what can be done to all.
+    const QStringList selected = selectedPaths();
+    if (item && selected.size() > 1 && selected.contains(path)) {
+        const qsizetype count = selected.size();
+        add(&menu, tr("&Move %1 Items To…").arg(count), [this, selected] { emit moveManyRequested(selected, QString()); });
+        add(&menu, tr("&Bookmark %1 Items").arg(count), [selected] {
+            for (const QString &each : selected) {
+                if (!Bookmarks::contains(each))
+                    Bookmarks::toggle(each);
+            }
+        });
+        menu.addSeparator();
+        add(&menu, tr("De&lete %1 Items").arg(count), [this, selected] { emit deleteManyRequested(selected); });
+        menu.exec(m_tree->viewport()->mapToGlobal(pos));
+        return;
+    }
     add(&menu, tr("New &Note"), [this, parent] { emit newNoteRequested(parent); });
     add(&menu, tr("New &Folder"), [this, parent] { emit newFolderRequested(parent); });
     if (item && !folder)
@@ -326,6 +454,8 @@ void FolderPanel::showContextMenu(const QPoint &pos)
     add(&menu, Bookmarks::contains(path) ? tr("Remove &Bookmark") : tr("&Bookmark"), [path] { Bookmarks::toggle(path); });
     menu.addSeparator();
 
+    if (folder)
+        add(&menu, tr("&Search in Folder"), [this, path] { emit searchInFolderRequested(path); });
     if (item && folder) {
         add(&menu, tr("&Open as Root Folder"), [this, path] { emit rootRequested(path); });
     } else if (!item) {

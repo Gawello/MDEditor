@@ -141,10 +141,10 @@ any text file can be edited, not just Markdown.
 | Obsidian | MDEditor | Notes | Prio | Effort |
 |---|---|---|---|---|
 | File explorer: create, rename, move (drag), duplicate, delete | ✅ | | | |
-| Sort by name / modified / created | ❌ | Name only | P2 | S |
-| Explorer toolbar: auto-reveal current file, expand / collapse all, filter | ❌ | | P2 | S |
-| Select several files (Ctrl/Shift+click): move, delete, bookmark, new folder with them | ❌ | | P2 | M |
-| "Search in folder" on a folder | ❌ | Fills the search panel's scope | P2 | S |
+| Sort by name / modified / created | 🟡 | Name and modified; not created | P3 | S |
+| Explorer toolbar: auto-reveal current file, expand / collapse all, filter | 🟡 | The current file is always shown; collapse all; no filter | P3 | S |
+| Select several files (Ctrl/Shift+click): move, delete, bookmark, new folder with them | ✅ | No "new folder with them" | | |
+| "Search in folder" on a folder | ✅ | | | |
 | Copy path relative to the open folder, as an app URL | 🟡 | Absolute path only | P3 | S |
 | Multiple vaults, vault switcher | ➖ | No vaults by design; a list of recent folders would help | P2 | S |
 | Default location for new notes / attachments, attachment subfolder | 🟡 | Attachment folder name only | P2 | S |

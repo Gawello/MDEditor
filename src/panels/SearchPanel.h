@@ -39,6 +39,9 @@ public:
     ~SearchPanel() override;
 
     void focusSearch(const QString &text = {}); // selects the field; with text, searches for it
+    // Only the files in `folder` (the folder panel's Search in Folder); empty: the whole open folder.
+    void setScope(const QString &folder);
+    QString scope() const { return m_scope; }
     void showTag(const QString &tag);
     void search();
     bool searching() const { return m_watcher.isRunning(); }
@@ -55,6 +58,9 @@ private:
     void showResults(const QList<FileMatches> &results, bool truncated);
 
     NoteIndex *m_index;
+    QString m_scope;
+    QWidget *m_scopeRow;
+    QLabel *m_scopeLabel;
     QLineEdit *m_field;
     QCheckBox *m_case;
     QCheckBox *m_regex;

@@ -77,8 +77,8 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Where | Entries | MDEditor |
 |---|---|---|
 | Toolbar | New note, New folder | ✅ (right-click) |
-| Toolbar | Change sort order ▸ File name A–Z / Z–A, Modified new–old / old–new, Created new–old / old–new | ❌ |
-| Toolbar | Auto-reveal current file, Expand all / Collapse all, Show search filter | ❌ |
+| Toolbar | Change sort order ▸ File name A–Z / Z–A, Modified new–old / old–new, Created new–old / old–new | 🟡 no created time |
+| Toolbar | Auto-reveal current file, Expand all / Collapse all, Show search filter | 🟡 always reveals; collapse all |
 | Note | Open in new tab, Open to the right, Open in new window | ❌ |
 | Note | Make a copy, Move file to…, Bookmark… | ✅ |
 | Note | Merge entire file with… | ❌ |
@@ -87,8 +87,8 @@ The menu is built from groups; which groups appear depends on what's under the m
 | Note | Open in default app, Show in system explorer, Rename…, Delete | ✅ |
 | Folder | New note, New folder, New canvas, New base | 🟡 note and folder |
 | Folder | Make a copy, Move folder to…, Bookmark…, Rename…, Delete, Copy path, Show in system explorer | ✅ |
-| Folder | Search in folder | ❌ |
-| Several selected (Ctrl/Shift+click) | New folder with selection (N items), Move N items to…, Bookmark…, Delete | ❌ no multi-selection |
+| Folder | Search in folder | ✅ |
+| Several selected (Ctrl/Shift+click) | New folder with selection (N items), Move N items to…, Bookmark…, Delete | 🟡 move, bookmark, delete |
 | Empty area | New note, New folder, New canvas, New base | 🟡 |
 | — | MDEditor extras: Open as Root Folder, Open Parent Folder | ✅ |
 

@@ -90,7 +90,11 @@ private:
     // `folder` empty: asks for one.
     void movePath(const QString &path, const QString &folder);
     // Renames or moves `path` to `target`, with tabs, the root folder, recent files and bookmarks following it.
-    bool relocate(const QString &path, const QString &target, const QString &title);
+    // `collect`: the moved files are added there and links are left to the caller (several moves, one question).
+    bool relocate(const QString &path, const QString &target, const QString &title,
+                  QHash<QString, QString> *collect = nullptr);
+    void moveMany(const QStringList &paths, const QString &folder); // folder empty: ask
+    void deleteMany(const QStringList &paths);
     // After a rename or move (old path -> new path for every file that moved): the links to them, and the
     // relative links of moved notes, are updated (asking first, per Settings → Notes).
     void updateLinksAfterMove(const QHash<QString, QString> &moved);

@@ -162,6 +162,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   each view's cursor), every edit mirrored through `contentsChange` (format-only changes are skipped by comparing
   text), and `shareFileState` copies the `Document` after save/reload/encoding changes so neither sees the other's
   save as a change on disk. Closing one twin asks nothing; `closeEvent` asks once per file.
+- The folder tree shows `NotesModel` through `SortProxy` (folders first in both directions, natural names or
+  modification time): map tree indexes with `FolderPanel::source`/`view`. Ctrl/Shift+click only selects;
+  several moves go through `MainWindow::moveMany` (`relocate(..., &moved)` then one `updateLinksAfterMove`).
 - Folder panel moves: drag within the tree (`NotesModel::dropMimeData`, only items from inside the root) and
   Move To… both go through `MainWindow::relocate`, like renames: tabs, root, recent files and bookmarks follow.
   A file moved to another drive is copied, then deleted.

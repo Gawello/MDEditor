@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QToolButton>
 #include <QRegularExpression>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -60,8 +61,23 @@ SearchPanel::SearchPanel(NoteIndex *index, QWidget *parent)
     options->addWidget(m_case);
     options->addWidget(m_regex);
     options->addStretch();
+    m_scopeRow = new QWidget(this);
+    m_scopeLabel = new QLabel(m_scopeRow);
+    m_scopeLabel->setForegroundRole(QPalette::PlaceholderText);
+    auto *clearScope = new QToolButton(m_scopeRow);
+    clearScope->setText(QStringLiteral("✕"));
+    clearScope->setAutoRaise(true);
+    clearScope->setToolTip(tr("Search the whole folder"));
+    connect(clearScope, &QToolButton::clicked, this, [this] { setScope(QString()); });
+    auto *scopeLayout = new QHBoxLayout(m_scopeRow);
+    scopeLayout->setContentsMargins(0, 0, 0, 0);
+    scopeLayout->addWidget(m_scopeLabel, 1);
+    scopeLayout->addWidget(clearScope);
+    m_scopeRow->hide();
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(6, 6, 6, 0);
+    layout->addWidget(m_scopeRow);
     layout->addWidget(m_field);
     layout->addLayout(options);
     layout->addWidget(m_status);
@@ -88,6 +104,17 @@ SearchPanel::~SearchPanel()
 {
     if (m_cancel)
         *m_cancel = true;
+}
+
+void SearchPanel::setScope(const QString &folder)
+{
+    m_scope = folder.isEmpty() ? QString() : QDir::cleanPath(folder);
+    const QString shown = m_index->root().isEmpty() || m_scope == m_index->root() ? QDir(m_scope).dirName()
+                                                                                  : QDir(m_index->root()).relativeFilePath(m_scope);
+    m_scopeLabel->setText(tr("In: %1").arg(shown));
+    m_scopeRow->setVisible(!m_scope.isEmpty());
+    if (!m_field->text().isEmpty())
+        search();
 }
 
 void SearchPanel::focusSearch(const QString &text)
@@ -176,7 +203,12 @@ void SearchPanel::search()
     m_status->setText(tr("Searching…"));
     m_cancel = std::make_shared<std::atomic<bool>>(false);
     const auto cancel = m_cancel;
-    const QStringList files = m_index->files();
+    QStringList files = m_index->files();
+    if (!m_scope.isEmpty()) {
+        const QString prefix = m_scope + u'/';
+        files.erase(std::remove_if(files.begin(), files.end(), [&prefix](const QString &file) { return !file.startsWith(prefix); }),
+                    files.end());
+    }
     m_watcher.setFuture(runInBackground([files, query, cancel] { return run(files, query, cancel.get()); }));
 }
 
