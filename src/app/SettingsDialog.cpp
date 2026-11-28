@@ -455,6 +455,9 @@ QWidget *SettingsDialog::createEditorPage()
                                    AppSettings::instance().autoPairBrackets()));
     form->addRow(QString(), toggle(tr("Close `code` and wrap a selection in **, ==, ~, $ as they are typed"),
                                    AppSettings::autoPairMarkdownKey, AppSettings::instance().autoPairMarkdown()));
+    form->addRow(QString(), toggle(tr("Turn formatted text pasted from web pages and documents into Markdown "
+                                      "(Ctrl+Shift+V pastes plain text)"),
+                                   AppSettings::convertPastedHtmlKey, AppSettings::instance().convertPastedHtml()));
 
     layout->addLayout(form);
     layout->addWidget(hint(tr("Pasted images are saved in this folder, next to the note.")));

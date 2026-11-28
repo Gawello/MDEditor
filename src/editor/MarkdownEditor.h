@@ -123,6 +123,9 @@ public:
     using CompletionProvider =
         std::function<QList<CompletionItem>(const md::CompletionContext &context, const QString &from, const QString &text)>;
     static void setCompletionProvider(CompletionProvider provider);
+    // Formatted text (a web page, Word, Excel) as Markdown: headings, emphasis, links, images, lists, tables, code.
+    // Empty when the HTML holds nothing worth converting (plain text wrapped in tags).
+    static QString htmlToMarkdown(const QString &html);
     // What an embed or a preview shows of a note: without the front matter, only the section (`Heading`) or
     // block (`^id`) when `anchor` names one, and [[links]] as their text, which QTextDocument can't show.
     static QString excerpt(const QString &text, const QString &anchor);
@@ -164,6 +167,7 @@ protected:
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     bool canInsertFromMimeData(const QMimeData *source) const override;
+    QMimeData *createMimeDataFromSelection() const override;
     void insertFromMimeData(const QMimeData *source) override;
 
 private:

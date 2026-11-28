@@ -21,6 +21,7 @@ public:
     static constexpr auto fallbackEncodingKey = "editor/fallbackEncoding";
     static constexpr auto autoPairBracketsKey = "editor/autoPairBrackets";
     static constexpr auto autoPairMarkdownKey = "editor/autoPairMarkdown";
+    static constexpr auto convertPastedHtmlKey = "editor/convertPastedHtml";
     // Comma-separated dictionary codes ("pl_PL,en_US"); empty: no spell checking; absent: the default.
     static constexpr auto spellLanguagesKey = "spell/languages";
     static constexpr auto bookmarksKey = "bookmarks"; // absolute paths, in the user's order
@@ -52,6 +53,7 @@ public:
     bool formatOnSave() const { return value(formatOnSaveKey, false).toBool(); }
     bool autoPairBrackets() const { return value(autoPairBracketsKey, true).toBool(); }
     bool autoPairMarkdown() const { return value(autoPairMarkdownKey, true).toBool(); }
+    bool convertPastedHtml() const { return value(convertPastedHtmlKey, true).toBool(); }
     QString dailyFolder() const { return value(dailyFolderKey).toString(); }
     QString dailyFormat() const { return value(dailyFormatKey, QStringLiteral("YYYY-MM-DD")).toString(); }
     QString dailyTemplate() const { return value(dailyTemplateKey).toString(); }

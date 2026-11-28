@@ -4,7 +4,9 @@
 #include "markdown/LineStyle.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QTextBlock>
 
 namespace {
@@ -199,4 +201,63 @@ TEST_CASE(line_shortcuts_reach_the_window)
         QApplication::sendEvent(&editor, &override);
         CHECK(!override.isAccepted());
     }
+}
+
+TEST_CASE(pasting_html_gives_markdown)
+{
+    const QString web = QStringLiteral(
+        "<h2>Title</h2><p>Some <b>bold</b>, <i>slanted</i> and <a href=\"https://x.org/a\">a link</a>.</p>"
+        "<ul><li>one</li><li>two</li></ul><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>"
+        "<pre><code>let x = 1;</code></pre>");
+    const QString markdown = MarkdownEditor::htmlToMarkdown(web);
+    CHECK(markdown.contains("## Title"));
+    CHECK(markdown.contains("**bold**") && markdown.contains("*slanted*"));
+    CHECK(markdown.contains("[a link](https://x.org/a)"));
+    CHECK(markdown.contains("- one") && markdown.contains("- two"));
+    CHECK(markdown.contains("|A|B|") || markdown.contains("| A | B |") || markdown.contains("|A |B |"));
+    CHECK(markdown.contains("let x = 1;"));
+    const QString code = MarkdownEditor::htmlToMarkdown(QStringLiteral("<pre><code>a\n\nb\nc</code></pre><ol><li>x</li></ol>"));
+    CHECK(code.contains("```\na\n\nb\nc\n```") || code.contains("```\na\n\nb\nc\n\n```"));
+    CHECK(code.contains("\n1. x"));
+    CHECK(!markdown.contains("\n\n\n") && !markdown.endsWith(u'\n'));
+    // Plain text in tags isn't converted (it pastes as it is).
+    CHECK(MarkdownEditor::htmlToMarkdown(QStringLiteral("<html><body><p>just text</p></body></html>")).isEmpty());
+    // Word: bold by style.
+    CHECK(MarkdownEditor::htmlToMarkdown(QStringLiteral("<p><span style='font-weight:bold'>W</span> x</p>")).contains("**W**"));
+
+    const auto copyHtml = [&web] {
+        auto *data = new QMimeData;
+        data->setHtml(web);
+        data->setText(QStringLiteral("Title Some bold"));
+        QGuiApplication::clipboard()->setMimeData(data);
+    };
+    MarkdownEditor editor;
+    copyHtml();
+    editor.paste();
+    CHECK(text(editor).startsWith("## Title"));
+    editor.undo(); // one step
+    CHECK(text(editor).isEmpty());
+    // Turned off, or in a plain-text file: the text.
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::convertPastedHtmlKey), false);
+    copyHtml();
+    editor.paste();
+    CHECK(text(editor) == "Title Some bold");
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::convertPastedHtmlKey), true);
+    editor.setMarkdown(QString());
+    editor.setMarkdownMode(false);
+    copyHtml();
+    editor.paste();
+    CHECK(text(editor) == "Title Some bold");
+}
+
+TEST_CASE(copying_gives_the_markdown_as_plain_text)
+{
+    MarkdownEditor editor;
+    const QString note = QStringLiteral("# Head\n**bold**") + QChar(0x00A0) + QStringLiteral("x");
+    editor.setMarkdown(note);
+    editor.selectAll();
+    editor.copy();
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    CHECK(data && !data->hasHtml());
+    CHECK(data && data->text() == note); // the non-breaking space too
 }

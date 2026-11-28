@@ -268,7 +268,7 @@ settings in new window ➖.
 | Auto-pair brackets, Auto-pair Markdown syntax | ✅ |
 | Smart lists | ✅ always on |
 | Indent using tabs, Indent visual width | 🟡 |
-| Convert pasted HTML to Markdown (Ctrl+Shift+V pastes without) | ❌ |
+| Convert pasted HTML to Markdown (Ctrl+Shift+V pastes without) | ✅ |
 | Vim key bindings | ❌ |
 
 ### Files and links

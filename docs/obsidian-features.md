@@ -60,7 +60,7 @@ any text file can be edited, not just Markdown.
 | Multiple cursors (Alt+click, Ctrl+D…) | ❌ | Hard in QPlainTextEdit | P3 | L |
 | Vim key bindings | ❌ | | P3 | L |
 | Slash commands (`/` menu in the text) | ❌ | Reuse the command palette | P2 | S |
-| Convert pasted HTML to Markdown | ❌ | Pasting from browsers and Word | P1 | M |
+| Convert pasted HTML to Markdown | ✅ | Paste and drop; Ctrl+Shift+V pastes plain text | | |
 | Paste and drop images (saved as attachments) | ✅ | | | |
 | Drop files to link them | 🟡 | Images only; other files should get links too | P2 | S |
 | Find and replace with regular expressions | ✅ | | | |

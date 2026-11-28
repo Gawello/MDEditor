@@ -311,7 +311,10 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   "unset"); unset means regional `LC_*` languages first, then `LANG`, then en_US. Both highlighters underline via
   `underlineMisspelled`, skipping the word at the caret; so the right-click menu asks `SpellChecker` itself
   (`misspelledWordAt`), since the click puts the caret on the word. Code files aren't checked, `.txt` is.
-- Pasting (`MarkdownEditor::insertFromMimeData`): copied image *files* are linked in place; raw image data
+- Pasting (`MarkdownEditor::insertFromMimeData`): HTML with structure goes through `htmlToMarkdown` (Qt's
+  `QTextDocument::setHtml` + `toMarkdown`, then fixes: Qt doubles the lines of `<pre>` blocks and writes "1.  x");
+  `createMimeDataFromSelection` copies plain text only, or copying inside the app would paste back as "HTML".
+  Copied image *files* are linked in place; raw image data
   is saved as `assets/pasted-image-<timestamp>.png` next to the note (requires a saved note, so the editor
   knows its path via `setDocumentPath`). If the clipboard has text too, text wins (Word/Excel put both).
 - A table header depends on the *next* line (it needs a delimiter row below it). `recheckPreviousBlock` detects

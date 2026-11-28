@@ -53,6 +53,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Brackets and quotes close themselves (`(`, `[`, `{`, `"`, `'` at the start of a word, `` ` ``), typing the closing
   one steps over it, Backspace in an empty pair removes both; a selection is wrapped by typing `*`, `=`, `~`, `$`,
   `` ` `` or a bracket (Settings → Editor)
+- Formatted text pasted or dropped from web pages, Word or Excel becomes Markdown (headings, emphasis, links, images,
+  lists, tables, code); Ctrl+Shift+V pastes plain text. Copying gives the Markdown itself, as plain text
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)
 - Find and replace (Ctrl+F / Ctrl+H, F3 / Shift+F3): match case, whole word, regular expressions with `$1`
   groups, all matches highlighted, Replace All as one undo step

@@ -1100,7 +1100,79 @@ void MarkdownEditor::insertFromMimeData(const QMimeData *source)
         pasteImage(qvariant_cast<QImage>(source->imageData()));
         return;
     }
+    if (source->hasHtml() && AppSettings::instance().convertPastedHtml()) {
+        if (const QString markdown = htmlToMarkdown(source->html()); !markdown.isEmpty()) {
+            insertPlainText(markdown);
+            return;
+        }
+    }
     QPlainTextEdit::insertFromMimeData(source);
+}
+
+QMimeData *MarkdownEditor::createMimeDataFromSelection() const
+{
+    // The Markdown as it is, as plain text only: Qt would add HTML of the shown formatting, which a paste
+    // (here or elsewhere) would then take for formatted text.
+    auto *data = new QMimeData;
+    data->setText(textCursor().selectedText().replace(QChar::ParagraphSeparator, u'\n'));
+    return data;
+}
+
+QString MarkdownEditor::htmlToMarkdown(const QString &html)
+{
+    // Only HTML with structure is worth converting; anything else pastes its text as it is.
+    static const QRegularExpression structure(
+        QStringLiteral(R"(<(h[1-6]|b|strong|i|em|a\s|ul|ol|li|table|pre|code|img|blockquote|s|del|strike|hr)[\s>/])"),
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression styled(QStringLiteral(R"(font-weight:\s*(bold|[6-9]00)|font-style:\s*italic)"),
+                                           QRegularExpression::CaseInsensitiveOption);
+    if (!structure.match(html).hasMatch() && !styled.match(html).hasMatch())
+        return {};
+    QTextDocument document;
+    document.setHtml(html);
+    QString markdown = document.toMarkdown(QTextDocument::MarkdownDialectGitHub);
+    // Qt ends lines of a paragraph with "  " (hard breaks), separates blocks with blank lines, writes "1.  x"
+    // and puts a blank line after every line of a <pre> block.
+    static const QRegularExpression numbered(QStringLiteral(R"(^(\s*\d+[.)]) {2,})"));
+    QStringList lines = markdown.split(u'\n');
+    QStringList result;
+    for (int i = 0; i < lines.size(); ++i) {
+        QString line = lines[i];
+        if (line.startsWith(QStringLiteral("```"))) { // a code block: as is, without the doubled line breaks
+            QStringList code;
+            int end = i + 1;
+            while (end < lines.size() && !lines[end].startsWith(QStringLiteral("```")))
+                code << lines[end++];
+            // Qt follows every line of code with an empty one (a blank line of the code stays one line).
+            bool doubled = false;
+            for (int j = 0; j < code.size(); ++j) {
+                if (!code[j].isEmpty()) {
+                    doubled = j + 1 < code.size() && code[j + 1].isEmpty();
+                    if (!doubled)
+                        break;
+                }
+            }
+            result << line;
+            for (int j = 0; j < code.size(); ++j) {
+                result << code[j];
+                if (doubled && !code[j].isEmpty())
+                    ++j; // the empty line Qt added
+            }
+            if (end < lines.size())
+                result << lines[end];
+            i = end;
+            continue;
+        }
+        while (line.endsWith(u' ') && !line.endsWith(QStringLiteral("  ")))
+            line.chop(1);
+        line.replace(numbered, QStringLiteral("\\1 "));
+        if (line.trimmed().isEmpty() && (result.isEmpty() || result.last().trimmed().isEmpty()))
+            continue; // one blank line at most, none at the start
+        result << line;
+    }
+    while (!result.isEmpty() && result.last().trimmed().isEmpty())
+        result.removeLast();
+    return result.join(u'\n');
 }
 
 void MarkdownEditor::pasteImage(const QImage &image)
