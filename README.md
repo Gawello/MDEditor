@@ -67,6 +67,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   `[[Note#^` its block ids, `#ta` the tags in use, and in the front matter the property names and values the
   folder's notes use; ↑↓ to choose, Enter or Tab to insert, Esc to close
 - Smart lists: Enter continues the list, Enter on an empty item ends it, Tab / Shift+Tab indent
+- Note composer (Edit menu): Extract Selection / Extract Heading to a new note (a link stays in its place), Merge
+  Note Into another (its text at the end, links to it point there, the file goes to the trash)
 - Line commands (Edit menu): Move Line Up / Down (Alt+↑ / Alt+↓, folded sections move as a whole), Delete Line
   (Ctrl+D), Toggle Checkbox (Ctrl+L: a line becomes a task, a task is checked or unchecked), Cycle List Item
 - Brackets and quotes close themselves (`(`, `[`, `{`, `"`, `'` at the start of a word, `` ` ``), typing the closing

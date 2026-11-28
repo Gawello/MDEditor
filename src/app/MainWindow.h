@@ -43,6 +43,9 @@ public:
     void openFolder(const QString &path);
     // A few seconds after startup, if enabled in Settings (Help → Check for Updates works any time).
     void checkForUpdatesOnStart();
+    // Obsidian's note composer, on the current note. `name` empty: asks for one.
+    bool extractToNote(bool heading, const QString &name = {});
+    bool mergeInto(const QString &target, bool ask = true); // target empty: asks which
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -97,7 +100,8 @@ private:
     void deleteMany(const QStringList &paths);
     // After a rename or move (old path -> new path for every file that moved): the links to them, and the
     // relative links of moved notes, are updated (asking first, per Settings → Notes).
-    void updateLinksAfterMove(const QHash<QString, QString> &moved);
+    // `ownLinks`: the moved notes' own relative links follow too (off for a merge: the note is gone).
+    void updateLinksAfterMove(const QHash<QString, QString> &moved, bool ownLinks = true);
     void deletePath(const QString &path);
     void newNote(const QString &folder);
     void newFolder(const QString &folder);

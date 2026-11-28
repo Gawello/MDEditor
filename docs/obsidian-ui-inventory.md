@@ -222,7 +222,7 @@ out.
 | Bookmarks | Bookmark…, Bookmark all tabs…, heading / block under cursor…, current search…, Remove bookmark for the current file, Show bookmarks | 🟡 file and folder |
 | Daily notes | Open today's / next / previous daily note | 🟡 today only |
 | Templates | Insert template, Insert current date / time | 🟡 template |
-| Note composer | Extract this heading…, Extract current selection…, Merge current file with another file… | ❌ |
+| Note composer | Extract this heading…, Extract current selection…, Merge current file with another file… | ✅ |
 | Unique note creator | Create new unique note, Add unique internal link | ❌ |
 | Random note | Open random note | ❌ |
 | File recovery | Open local history | ✅ File → Version History |

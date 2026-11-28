@@ -154,7 +154,7 @@ any text file can be edited, not just Markdown.
 | Show all file types | ✅ | Every text file opens; binary files go to their app | | |
 | Open in default app, reveal in file manager, copy path | ✅ | | | |
 | File recovery (snapshots of notes, browse and restore) | ✅ | On open and save; interval and days in Settings | | |
-| Note composer (merge notes, extract selection to a new note) | ❌ | | P2 | M |
+| Note composer (merge notes, extract selection to a new note) | ✅ | Extract selection or heading; merge into | | |
 | Unique note creator (timestamp prefix, Zettelkasten) | ❌ | | P3 | S |
 | Format converter / importer (Roam, Notion, Bear, Evernote…) | ❌ | | P3 | L |
 | Download remote attachments into the folder | ❌ | | P3 | S |

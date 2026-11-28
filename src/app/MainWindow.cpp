@@ -21,7 +21,9 @@
 #include "editor/EditorTheme.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/Completions.h"
+#include "editor/LivePreviewHighlighter.h"
 #include "markdown/LineStyle.h"
+#include "markdown/NoteScan.h"
 #include "markdown/LinkRewrite.h"
 #include "notes/NoteEdits.h"
 #include "notes/Snapshots.h"
@@ -392,6 +394,17 @@ void MainWindow::createMenus()
             editor->transformLines(md::cycleListItem);
     });
     edit->addSeparator();
+    // Obsidian's note composer.
+    QAction *extractSelection = edit->addAction(tr("Extract &Selection to New Note…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { extractToNote(false); }, Qt::QueuedConnection);
+    });
+    QAction *extractHeading = edit->addAction(tr("Extract &Heading to New Note…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { extractToNote(true); }, Qt::QueuedConnection);
+    });
+    QAction *merge = edit->addAction(tr("Merge Note &Into…"), this, [this] {
+        QMetaObject::invokeMethod(this, [this] { mergeInto({}); }, Qt::QueuedConnection);
+    });
+    edit->addSeparator();
     edit->addAction(tr("&Find…"), QKeySequence::Find, this, [this] { currentTab()->findBar()->openFind(); });
     edit->addAction(tr("R&eplace…"), QKeySequence(Qt::CTRL | Qt::Key_H), this,
                     [this] { currentTab()->findBar()->openReplace(); });
@@ -419,7 +432,7 @@ void MainWindow::createMenus()
     QMenu *insert = format->addMenu(tr("I&nsert"));
     MarkdownEditor::addInsertActions(insert, markdown);
     m_markdownActions = format->actions();
-    m_markdownActions << checkbox << cycle << exportPdf << exportHtml;
+    m_markdownActions << checkbox << cycle << exportPdf << exportHtml << extractSelection << extractHeading << merge;
     format->addSeparator();
     format->addAction(tr("&Prettify"), MarkdownEditor::prettifyShortcut(), this,
                       [this] { currentEditor()->formatAtCursor(); });
@@ -2423,7 +2436,7 @@ bool MainWindow::relocate(const QString &path, const QString &target, const QStr
     return true;
 }
 
-void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved)
+void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved, bool ownLinks)
 {
     const QString mode = AppSettings::instance().updateLinks();
     if (moved.isEmpty() || mode == u"never")
@@ -2467,7 +2480,7 @@ void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved)
     for (auto it = moved.cbegin(); it != moved.cend(); ++it) {
         for (const NoteIndex::Backlink &link : m_index->backlinks(it.key()))
             notes.insert(link.source);
-        if (MarkdownEditor::isMarkdownFile(it.key()))
+        if (ownLinks && MarkdownEditor::isMarkdownFile(it.key()))
             notes.insert(it.key()); // its own relative links may change
     }
     for (const QString &oldFrom : std::as_const(notes)) {
@@ -2542,6 +2555,131 @@ void MainWindow::updateLinksAfterMove(const QHash<QString, QString> &moved)
         QMessageBox::warning(this, tr("Update Links"), tr("Some links couldn't be updated:\n%1").arg(failures.join(u'\n')));
     else
         statusBar()->showMessage(linkCount == 1 ? tr("Updated 1 link") : tr("Updated %1 links").arg(linkCount), 5000);
+}
+
+bool MainWindow::extractToNote(bool heading, const QString &givenName)
+{
+    EditorTab *tab = currentTab();
+    MarkdownEditor *editor = markdownEditor();
+    if (!tab || !editor)
+        return false;
+    QTextCursor range = editor->textCursor();
+    QString suggested;
+    if (heading) { // the section under the heading at or above the cursor
+        const QStringList lines = editor->markdown().split(u'\n');
+        std::vector<std::u16string_view> views;
+        for (const QString &line : lines)
+            views.push_back(toView(line));
+        const std::vector<md::BlockInfo> blocks = md::parseBlocks(views);
+        int line = range.blockNumber();
+        while (line >= 0 && blocks[size_t(line)].type != md::BlockType::Heading)
+            --line;
+        if (line < 0) {
+            statusBar()->showMessage(tr("No heading above the cursor"), 5000);
+            return false;
+        }
+        const int end = md::foldEnd(blocks, line);
+        const QTextBlock first = editor->document()->findBlockByNumber(line);
+        const QTextBlock last = editor->document()->findBlockByNumber(end);
+        range.setPosition(first.position());
+        range.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+        suggested = QString::fromStdU16String(md::stripInlineFormatting(views[size_t(line)].substr(size_t(blocks[size_t(line)].contentStart))))
+                        .trimmed();
+    } else if (!range.hasSelection()) {
+        statusBar()->showMessage(tr("Select the text to extract first"), 5000);
+        return false;
+    }
+    QString name = givenName;
+    if (name.isEmpty()) {
+        bool ok = false;
+        name = QInputDialog::getText(this, heading ? tr("Extract Heading") : tr("Extract Selection"), tr("New note's name:"),
+                                     QLineEdit::Normal, suggested, &ok).trimmed();
+        if (!ok || name.isEmpty())
+            return false;
+    }
+    if (const QString problem = FileActions::checkName(name + QStringLiteral(".md")); !problem.isEmpty()) {
+        QMessageBox::warning(this, tr("Extract"), problem);
+        return false;
+    }
+    const QString path = QDir::cleanPath(QDir(newNoteFolder()).filePath(name + QStringLiteral(".md")));
+    if (QFileInfo::exists(path)) {
+        QMessageBox::warning(this, tr("Extract"), tr("%1 already exists.").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    const QString content = range.selectedText().replace(QChar::ParagraphSeparator, u'\n') + u'\n';
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    const FileActions::Result created = FileActions::createFile(path, this);
+    if (!created.ok) {
+        QMessageBox::warning(this, tr("Extract"), tr("Cannot create %1:\n%2").arg(QDir::toNativeSeparators(path), created.error));
+        return false;
+    }
+    const QStringList failures = changeNotes({{path, [content](const QString &) -> std::optional<QString> { return content; }}});
+    if (!failures.isEmpty()) {
+        QMessageBox::warning(this, tr("Extract"), failures.join(u'\n'));
+        return false;
+    }
+    // In its place, a link to it (one undo step).
+    QString link = QStringLiteral("[[%1]]").arg(m_index->linkText(path).isEmpty() ? name : m_index->linkText(path));
+    range.insertText(link);
+    statusBar()->showMessage(tr("Extracted to %1").arg(QFileInfo(path).fileName()), 5000);
+    return true;
+}
+
+bool MainWindow::mergeInto(const QString &givenTarget, bool ask)
+{
+    EditorTab *tab = currentTab();
+    if (!tab || tab->isUntitled() || !MarkdownEditor::isMarkdownFile(tab->filePath()))
+        return false;
+    const QString source = tab->filePath();
+    QString target = givenTarget;
+    if (target.isEmpty()) { // which note: a list like the quick switcher's
+        PaletteDialog dialog(this, tr("Merge “%1” into…").arg(QFileInfo(source).completeBaseName()));
+        QList<PaletteDialog::Item> items;
+        for (const NoteIndex::FileEntry &entry : m_index->entries()) {
+            if (entry.note && entry.path != QDir::cleanPath(source))
+                items.append({entry.name, entry.folder, {}, [&target, path = entry.path] { target = path; }});
+        }
+        dialog.setItems(items);
+        if (!dialog.choose() || target.isEmpty())
+            return false;
+    }
+    if (ask && QMessageBox::question(this, tr("Merge Notes"),
+                                     tr("Add “%1” to the end of “%2”, point its links there and move it to the trash?")
+                                         .arg(QFileInfo(source).completeBaseName(), QFileInfo(target).completeBaseName()))
+                   != QMessageBox::Yes)
+        return false;
+    // Its text without its front matter goes at the end of the target.
+    const QString note = tab->editor()->markdown();
+    const md::NoteScan scan = md::scanNote(toView(note));
+    const QString text = note.split(u'\n').mid(scan.frontmatterEnd + 1).join(u'\n').trimmed();
+    const QStringList failures = changeNotes({{target, [text](const QString &existing) -> std::optional<QString> {
+        QString merged = existing;
+        while (merged.endsWith(u'\n'))
+            merged.chop(1);
+        return merged + QStringLiteral("\n\n") + text + u'\n';
+    }}});
+    if (!failures.isEmpty()) {
+        QMessageBox::warning(this, tr("Merge Notes"), failures.join(u'\n'));
+        return false;
+    }
+    updateLinksAfterMove({{QDir::cleanPath(source), QDir::cleanPath(target)}}, false);
+    tab->editor()->document()->setModified(false);
+    for (EditorTab *each : allTabs()) {
+        if (RecentFiles::samePath(each->filePath(), source))
+            discardTab(each);
+    }
+    const FileActions::Result trashed = FileActions::moveToTrash(source, this);
+    if (!trashed.ok)
+        QMessageBox::warning(this, tr("Merge Notes"), tr("Merged, but %1 couldn't be moved to the trash:\n%2")
+                                                          .arg(QDir::toNativeSeparators(source), trashed.error));
+    RecentFiles::remove(source);
+    Bookmarks::removed(source);
+    m_history.remove(QDir::cleanPath(source));
+    updateHistoryActions();
+    m_index->refresh();
+    openFile(target);
+    statusBar()->showMessage(tr("Merged into %1").arg(QFileInfo(target).fileName()), 5000);
+    return true;
 }
 
 void MainWindow::moveMany(const QStringList &paths, const QString &folder)
