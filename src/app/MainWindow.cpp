@@ -195,6 +195,7 @@ MainWindow::MainWindow(QWidget *parent)
             m_index->setExcluded(AppSettings::instance().excluded());
     });
     connect(m_folderPanel, &FolderPanel::rootChanged, m_index, &NoteIndex::setRoot);
+    connect(m_folderPanel, &FolderPanel::rootChanged, this, [](const QString &root) { MarkdownEditor::setNotesRoot(root); });
     // [[Links]] and embeds find notes anywhere in the open folder, like in Obsidian.
     MarkdownEditor::setLinkResolver([index = QPointer<NoteIndex>(m_index)](const QString &target, bool wiki,
                                                                           const QString &from) {
@@ -964,6 +965,7 @@ bool MainWindow::openFile(const QString &path)
 void MainWindow::openFolder(const QString &path)
 {
     m_folderPanel->setRootPath(path);
+    RecentFiles::addFolder(path);
     m_folderPanel->setVisible(true);
     if (EditorTab *tab = currentTab(); tab && !tab->isUntitled())
         m_folderPanel->selectFile(tab->filePath());
@@ -1239,8 +1241,8 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
         }
     });
     connect(tab->editor(), &MarkdownEditor::linkRequested, this,
-            [this, tab](const QString &path, const QString &anchor, bool toTheRight) {
-                followLink(tab, path, anchor, toTheRight);
+            [this, tab](const QString &path, const QString &anchor, bool toTheRight, bool newName) {
+                followLink(tab, path, anchor, toTheRight, newName);
             });
     connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
     connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
@@ -1487,9 +1489,25 @@ void MainWindow::populateRecentMenu()
 
     if (files.isEmpty())
         m_recentMenu->addAction(tr("No Recent Files"))->setEnabled(false);
+
+    // Folders: opened as the folder panel's folder. Not checked on disk (a network drive could hang the menu).
+    const QStringList folders = RecentFiles::folders();
+    if (!folders.isEmpty()) {
+        m_recentMenu->addSection(tr("Folders"));
+        for (const QString &folder : folders) {
+            QString name = QDir(folder).dirName().isEmpty() ? folder : QDir(folder).dirName();
+            const QString where = m_recentMenu->fontMetrics().elidedText(QDir::toNativeSeparators(folder), Qt::ElideMiddle, 360);
+            QAction *action = m_recentMenu->addAction(QStringLiteral("%1   %2").arg(name.replace(u'&', QStringLiteral("&&")),
+                                                                                     QString(where).replace(u'&', QStringLiteral("&&"))));
+            connect(action, &QAction::triggered, this, [this, folder] { openFolder(folder); });
+        }
+    }
     m_recentMenu->addSeparator();
-    QAction *clear = m_recentMenu->addAction(tr("&Clear Recent Files"), this, [] { RecentFiles::clear(); });
-    clear->setEnabled(!files.isEmpty());
+    QAction *clear = m_recentMenu->addAction(tr("&Clear Recent Files"), this, [] {
+        RecentFiles::clear();
+        RecentFiles::clearFolders();
+    });
+    clear->setEnabled(!files.isEmpty() || !folders.isEmpty());
 }
 
 QString MainWindow::dialogDirectory() const
@@ -1669,11 +1687,23 @@ void MainWindow::openAt(const QString &path, int line, int column, int length)
     editor->setFocus();
 }
 
+QString MainWindow::newNoteFolder() const
+{
+    const AppSettings &settings = AppSettings::instance();
+    const QString root = m_index->root().isEmpty() ? dialogDirectory() : m_index->root();
+    if (settings.newNoteLocation() == u"current") {
+        EditorTab *tab = m_tabs ? currentTab() : nullptr;
+        if (tab && !tab->isUntitled())
+            return QFileInfo(tab->filePath()).absolutePath();
+    } else if (settings.newNoteLocation() == u"folder" && !settings.newNoteFolder().trimmed().isEmpty()) {
+        return QDir::cleanPath(QDir(root).filePath(settings.newNoteFolder().trimmed()));
+    }
+    return root;
+}
+
 void MainWindow::createNamedNote(const QString &name)
 {
-    QString folder = m_index->root();
-    if (folder.isEmpty())
-        folder = dialogDirectory();
+    const QString folder = newNoteFolder();
     QString relative = name.trimmed();
     if (!relative.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
         relative += QStringLiteral(".md");
@@ -1693,10 +1723,12 @@ void MainWindow::createNamedNote(const QString &name)
         m_index->update(path, QString());
 }
 
-void MainWindow::followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight)
+void MainWindow::followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight, bool newName)
 {
     QPointer<EditorTab> source = from;
-    const QString file = path.isEmpty() && from ? from->filePath() : path;
+    QString file = path.isEmpty() && from ? from->filePath() : path;
+    if (newName && !QFileInfo::exists(file)) // [[New note]]: where new notes go (Settings → Notes)
+        file = QDir::cleanPath(QDir(newNoteFolder()).filePath(QFileInfo(file).fileName()));
     rememberPosition();
     ++m_quietHistory;
     auto record = qScopeGuard([this] {

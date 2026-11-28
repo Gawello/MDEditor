@@ -276,8 +276,8 @@ settings in new window ➖.
 |---|---|
 | Default file to open (last opened / new note / specific file / daily note) | 🟡 last session |
 | Always focus new tabs | ❌ |
-| Default location for new notes (root / same folder / given folder) | ❌ |
-| Default location for new attachments (root / same folder / subfolder / given folder) | 🟡 subfolder |
+| Default location for new notes (root / same folder / given folder) | ✅ |
+| Default location for new attachments (root / same folder / subfolder / given folder) | ✅ (subfolder, same folder, folder in the root) |
 | New link format (shortest / relative / absolute) | ❌ |
 | Automatically update internal links | ✅ (ask / always / never) |
 | Use [[Wikilinks]] | ❌ |

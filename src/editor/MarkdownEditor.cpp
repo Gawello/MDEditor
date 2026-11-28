@@ -105,6 +105,21 @@ void MarkdownEditor::setCompletionProvider(CompletionProvider provider)
     completionProvider() = std::move(provider);
 }
 
+namespace {
+
+QString &notesRoot()
+{
+    static QString root;
+    return root;
+}
+
+} // namespace
+
+void MarkdownEditor::setNotesRoot(const QString &root)
+{
+    notesRoot() = root;
+}
+
 MarkdownEditor::MarkdownEditor(QWidget *parent)
     : QPlainTextEdit(parent)
 {
@@ -1527,8 +1542,10 @@ void MarkdownEditor::pasteImage(const QImage &image)
         return;
     }
 
-    QDir directory(QFileInfo(m_documentPath).absolutePath());
-    if (!directory.mkpath(attachmentsFolder) || !directory.cd(attachmentsFolder)) {
+    // Where: a subfolder next to the note (default), next to it, or a folder in the open folder.
+    const QString location = AppSettings::instance().attachmentLocation();
+    QDir directory(location == u"root" && !notesRoot().isEmpty() ? notesRoot() : QFileInfo(m_documentPath).absolutePath());
+    if (location != u"same" && (!directory.mkpath(attachmentsFolder) || !directory.cd(attachmentsFolder))) {
         QMessageBox::warning(this, tr("Paste Image"),
                              tr("Cannot create the folder %1.")
                                  .arg(QDir::toNativeSeparators(directory.filePath(attachmentsFolder))));
@@ -1951,8 +1968,10 @@ void MarkdownEditor::openLink(const QString &target, bool toTheRight)
         emit statusMessage(tr("%1 doesn't exist").arg(QDir::toNativeSeparators(path)));
         return;
     }
+    const QString base = target.section(u'#', 0, 0).trimmed();
+    const bool newName = !file.exists() && !base.contains(u'/') && QFileInfo(base).suffix().isEmpty();
     if (text)
-        emit linkRequested(path, anchor, toTheRight);
+        emit linkRequested(path, anchor, toTheRight, newName);
     else
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }

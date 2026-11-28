@@ -126,6 +126,8 @@ public:
     using CompletionProvider =
         std::function<QList<CompletionItem>(const md::CompletionContext &context, const QString &from, const QString &text)>;
     static void setCompletionProvider(CompletionProvider provider);
+    // The open folder, for attachments kept in a folder there (Settings → Editor).
+    static void setNotesRoot(const QString &root);
     // Formatted text (a web page, Word, Excel) as Markdown: headings, emphasis, links, images, lists, tables, code.
     // Empty when the HTML holds nothing worth converting (plain text wrapped in tags).
     static QString htmlToMarkdown(const QString &html);
@@ -153,7 +155,8 @@ signals:
     // A link to a note or text file was followed: `path` (absolute; it may not exist yet, then the note is to be
     // created), the part after '#' (a heading or ^block), and whether it goes to the other pane. An empty
     // `path` means this note itself ([[#Heading]]).
-    void linkRequested(const QString &path, const QString &anchor, bool toTheRight);
+    // `newName`: a [[Name]] link to a note that doesn't exist: the window decides where it goes.
+    void linkRequested(const QString &path, const QString &anchor, bool toTheRight, bool newName = false);
     void revealRequested(const QString &path); // the link menu's Reveal in Folder Panel
     void renameRequested(const QString &path); // ...and Rename
     void searchRequested(const QString &text);  // the menu's Search for “selection”

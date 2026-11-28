@@ -43,6 +43,9 @@ public:
     static constexpr auto templatesFolderKey = "notes/templatesFolder";
     static constexpr auto updateLinksKey = "notes/updateLinks"; // after a rename or move: "ask", "always", "never"
     static constexpr auto excludedKey = "notes/excluded"; // one folder or pattern per line, relative to the root
+    static constexpr auto newNoteLocationKey = "notes/newNoteLocation"; // "root", "current", "folder"
+    static constexpr auto newNoteFolderKey = "notes/newNoteFolder";     // for "folder", relative to the root
+    static constexpr auto attachmentLocationKey = "editor/attachmentLocation"; // "subfolder", "same", "root"
     static constexpr auto snapshotsKey = "notes/snapshots";              // version history on/off
     static constexpr auto snapshotMinutesKey = "notes/snapshotMinutes"; // at most one copy per note this often
     static constexpr auto snapshotDaysKey = "notes/snapshotDays";       // kept this long
@@ -72,6 +75,9 @@ public:
     QString templatesFolder() const { return value(templatesFolderKey, QStringLiteral("templates")).toString(); }
     QString updateLinks() const { return value(updateLinksKey, QStringLiteral("ask")).toString(); }
     bool snapshots() const { return value(snapshotsKey, true).toBool(); }
+    QString newNoteLocation() const { return value(newNoteLocationKey, QStringLiteral("root")).toString(); }
+    QString newNoteFolder() const { return value(newNoteFolderKey).toString(); }
+    QString attachmentLocation() const { return value(attachmentLocationKey, QStringLiteral("subfolder")).toString(); }
     QStringList excluded() const { return value(excludedKey).toString().split(u'\n', Qt::SkipEmptyParts); }
     int snapshotMinutes() const { return value(snapshotMinutesKey, 5).toInt(); }
     int snapshotDays() const { return value(snapshotDaysKey, 7).toInt(); }

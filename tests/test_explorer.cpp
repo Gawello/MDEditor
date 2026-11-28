@@ -2,6 +2,7 @@
 #include "app/AppSettings.h"
 #include "app/EditorTab.h"
 #include "app/MainWindow.h"
+#include "app/RecentFiles.h"
 #include "editor/MarkdownEditor.h"
 #include "notes/NoteIndex.h"
 #include "panels/FolderPanel.h"
@@ -9,6 +10,8 @@
 
 #include <QAbstractItemModel>
 #include <QApplication>
+#include <QClipboard>
+#include <QImage>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -169,4 +172,67 @@ TEST_CASE(excluded_files_stay_out_of_the_index)
     CHECK(index.notes().size() == 1);
     index.setExcluded({});
     CHECK(waitFor([&index] { return !index.scanning() && index.notes().size() == 2; }));
+}
+
+TEST_CASE(where_new_notes_and_attachments_go)
+{
+    QSettings().remove(QStringLiteral("session"));
+    QSettings().remove(QStringLiteral("window"));
+    AppSettings &settings = AppSettings::instance();
+    QTemporaryDir dir;
+    writeNote(dir.filePath(QStringLiteral("Home.md")), "x\n");
+    writeNote(dir.filePath(QStringLiteral("sub/Note.md")), "[[Fresh]] [[Other]]\n");
+    MainWindow window;
+    window.show();
+    CHECK(window.openFile(dir.filePath(QStringLiteral("Home.md"))));
+    CHECK(window.openFile(dir.filePath(QStringLiteral("sub/Note.md"))));
+    MarkdownEditor *editor = nullptr;
+    for (EditorTab *tab : window.findChildren<EditorTab *>()) {
+        if (tab->filePath().endsWith(u"sub/Note.md"))
+            editor = tab->editor();
+    }
+    CHECK(editor != nullptr);
+    if (!editor)
+        return;
+    const auto follow = [editor](const QString &link) {
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(int(editor->markdown().indexOf(link)) + 3);
+        editor->setTextCursor(cursor);
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::AltModifier);
+        QApplication::sendEvent(editor, &press);
+    };
+    // A given folder (made if needed); then the current note's folder.
+    settings.setValue(QString::fromLatin1(AppSettings::newNoteLocationKey), QStringLiteral("folder"));
+    settings.setValue(QString::fromLatin1(AppSettings::newNoteFolderKey), QStringLiteral("Inbox"));
+    follow(QStringLiteral("[[Fresh]]"));
+    CHECK(QFile::exists(dir.filePath(QStringLiteral("Inbox/Fresh.md"))));
+    for (EditorTab *tab : window.findChildren<EditorTab *>()) {
+        if (tab->filePath().endsWith(u"sub/Note.md"))
+            window.openFile(tab->filePath());
+    }
+    settings.setValue(QString::fromLatin1(AppSettings::newNoteLocationKey), QStringLiteral("current"));
+    follow(QStringLiteral("[[Other]]"));
+    CHECK(QFile::exists(dir.filePath(QStringLiteral("sub/Other.md"))));
+    settings.setValue(QString::fromLatin1(AppSettings::newNoteLocationKey), QStringLiteral("root"));
+
+    // Pasted images: next to the note, or in a folder of the open folder.
+    QImage picture(20, 20, QImage::Format_RGB32);
+    picture.fill(Qt::blue);
+    settings.setValue(QString::fromLatin1(AppSettings::attachmentLocationKey), QStringLiteral("same"));
+    QGuiApplication::clipboard()->setImage(picture);
+    editor->moveCursor(QTextCursor::End);
+    editor->paste();
+    CHECK(QDir(dir.filePath(QStringLiteral("sub"))).entryList({QStringLiteral("pasted-image-*.png")}).size() == 1);
+    settings.setValue(QString::fromLatin1(AppSettings::attachmentLocationKey), QStringLiteral("root"));
+    QGuiApplication::clipboard()->setImage(picture);
+    editor->paste();
+    CHECK(QDir(dir.filePath(QStringLiteral("assets"))).entryList({QStringLiteral("pasted-image-*.png")}).size() == 1);
+    CHECK(editor->markdown().contains("](../assets/pasted-image-")); // linked from the note
+    settings.setValue(QString::fromLatin1(AppSettings::attachmentLocationKey), QStringLiteral("subfolder"));
+
+    // The folder is in Open Recent.
+    CHECK(RecentFiles::folders().value(0) == QDir(dir.path()).absolutePath());
+    for (EditorTab *tab : window.findChildren<EditorTab *>())
+        tab->editor()->document()->setModified(false);
+    window.close();
 }

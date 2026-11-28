@@ -12,6 +12,11 @@ void add(const QString &path);
 void remove(const QString &path);
 void clear();
 
+// Folders opened in the folder panel, newest first (File → Open Recent).
+QStringList folders();
+void addFolder(const QString &path);
+void clearFolders();
+
 // Path comparison that follows the file system's case sensitivity.
 bool samePath(const QString &a, const QString &b);
 

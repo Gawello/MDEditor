@@ -146,8 +146,8 @@ any text file can be edited, not just Markdown.
 | Select several files (Ctrl/Shift+click): move, delete, bookmark, new folder with them | ✅ | No "new folder with them" | | |
 | "Search in folder" on a folder | ✅ | | | |
 | Copy path relative to the open folder, as an app URL | 🟡 | Absolute path only | P3 | S |
-| Multiple vaults, vault switcher | ➖ | No vaults by design; a list of recent folders would help | P2 | S |
-| Default location for new notes / attachments, attachment subfolder | 🟡 | Attachment folder name only | P2 | S |
+| Multiple vaults, vault switcher | ➖ | No vaults by design; recent folders are in File → Open Recent | | |
+| Default location for new notes / attachments, attachment subfolder | ✅ | Settings → Notes / Editor | | |
 | Excluded files (hidden from search, graph, switcher) | ✅ | Folders and patterns; out of the index entirely | | |
 | Delete to system trash / `.trash` folder / permanently, confirm deletion | 🟡 | System trash with a fallback; no `.trash` option | P3 | S |
 | Delete attachments with the note | ❌ | | P3 | S |

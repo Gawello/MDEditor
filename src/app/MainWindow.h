@@ -77,7 +77,7 @@ private:
     void renameFile(const QString &path); // in the folder panel when it's listed there, else with a dialog
     // A link followed in `from`'s editor: opens (or creates) `path`, in the other pane if `toTheRight`, and
     // scrolls to `anchor`. An empty path is `from` itself.
-    void followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight);
+    void followLink(EditorTab *from, const QString &path, const QString &anchor, bool toTheRight, bool newName = false);
     void openToTheRight(EditorTab *from, const QString &path);
     static void scrollToLine(MarkdownEditor *editor, int line); // the line at the top, cursor on it
     // The app changes notes the user isn't editing (a linked mention, links after a rename). An open note is
@@ -139,6 +139,7 @@ private:
     void openAt(const QString &path, int line, int column, int length);
     // A new note `name`.md in the folder (or next to the current file), opened in a tab.
     void createNamedNote(const QString &name);
+    QString newNoteFolder() const; // Settings → Notes: the open folder, the current note's, or a given one
     void updateWordCount();
     void updateBacklinkCount();
     void exportNote(bool pdf); // File → Export to PDF / HTML

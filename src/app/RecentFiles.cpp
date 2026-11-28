@@ -51,4 +51,23 @@ void clear()
     store({});
 }
 
+QStringList folders()
+{
+    return QSettings().value(QStringLiteral("recentFolders")).toStringList();
+}
+
+void addFolder(const QString &path)
+{
+    const QString absolute = QFileInfo(path).absoluteFilePath();
+    QStringList list = folders();
+    list.removeIf([&](const QString &folder) { return samePath(folder, absolute); });
+    list.prepend(absolute);
+    QSettings().setValue(QStringLiteral("recentFolders"), list.mid(0, maxCount));
+}
+
+void clearFolders()
+{
+    QSettings().setValue(QStringLiteral("recentFolders"), QStringList());
+}
+
 } // namespace RecentFiles

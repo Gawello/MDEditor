@@ -166,6 +166,25 @@ QWidget *SettingsDialog::createNotesPage()
                               "template if needed. Formats use Obsidian's tokens: YYYY, MM, DD, dddd, HH, mm; text in "
                               "[brackets] is kept as is.")));
 
+    layout->addWidget(heading(tr("New notes")));
+    auto *placement = new QFormLayout;
+    auto *location = new QComboBox(page);
+    location->addItem(tr("The open folder"), QStringLiteral("root"));
+    location->addItem(tr("The current note's folder"), QStringLiteral("current"));
+    location->addItem(tr("This folder:"), QStringLiteral("folder"));
+    location->setCurrentIndex(std::max(0, location->findData(settings.newNoteLocation())));
+    QLineEdit *newFolder = field(AppSettings::newNoteFolderKey, settings.newNoteFolder(), tr("e.g. Inbox"));
+    newFolder->setEnabled(settings.newNoteLocation() == u"folder");
+    connect(location, &QComboBox::currentIndexChanged, this, [location, newFolder] {
+        AppSettings::instance().setValue(QString::fromLatin1(AppSettings::newNoteLocationKey), location->currentData());
+        newFolder->setEnabled(location->currentData().toString() == u"folder");
+    });
+    placement->addRow(tr("Create new notes in"), location);
+    placement->addRow(QString(), newFolder);
+    layout->addLayout(placement);
+    layout->addWidget(hint(tr("For notes made from the quick switcher and from links to notes that don't exist yet. "
+                              "The folder is relative to the open folder.")));
+
     layout->addWidget(heading(tr("Links")));
     auto *links = new QFormLayout;
     auto *updateLinks = new QComboBox(page);
@@ -470,6 +489,15 @@ QWidget *SettingsDialog::createEditorPage()
                                          folder.isEmpty() ? QStringLiteral("assets") : folder);
     });
     form->addRow(tr("Pasted images folder"), attachments);
+    auto *attachmentPlace = new QComboBox(page);
+    attachmentPlace->addItem(tr("In that folder next to the note"), QStringLiteral("subfolder"));
+    attachmentPlace->addItem(tr("Next to the note"), QStringLiteral("same"));
+    attachmentPlace->addItem(tr("In that folder in the open folder"), QStringLiteral("root"));
+    attachmentPlace->setCurrentIndex(std::max(0, attachmentPlace->findData(AppSettings::instance().attachmentLocation())));
+    connect(attachmentPlace, &QComboBox::currentIndexChanged, this, [attachmentPlace] {
+        AppSettings::instance().setValue(QString::fromLatin1(AppSettings::attachmentLocationKey), attachmentPlace->currentData());
+    });
+    form->addRow(tr("Save pasted images"), attachmentPlace);
 
     auto *encoding = new QComboBox(page);
     for (const QString &name : Encodings::common()) {
