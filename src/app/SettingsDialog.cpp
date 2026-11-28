@@ -453,6 +453,8 @@ QWidget *SettingsDialog::createEditorPage()
     };
     form->addRow(QString(), toggle(tr("Show images from the web (they are downloaded when shown)"),
                                    AppSettings::remoteImagesKey, AppSettings::instance().remoteImages()));
+    form->addRow(QString(), toggle(tr("Show the note's name as a title above it (edit it to rename the file)"),
+                                   AppSettings::inlineTitleKey, AppSettings::instance().inlineTitle()));
     form->addRow(QString(), toggle(tr("Show line numbers"), AppSettings::lineNumbersKey, AppSettings::instance().lineNumbers()));
     form->addRow(QString(), toggle(tr("Close brackets and quotes as they are typed"), AppSettings::autoPairBracketsKey,
                                    AppSettings::instance().autoPairBrackets()));

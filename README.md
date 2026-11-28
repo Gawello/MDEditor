@@ -48,6 +48,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   notes it holds): asked first by default, or always / never (Settings → Notes)
 - Images: drag an image's right edge to resize it (the width goes into the link, `![[pic.png|300]]`); right-click
   it to open, copy, reveal, reset its size, remove the link or delete the file
+- The note's name is shown as a title above it; editing it renames the file (links follow)
 - Line numbers (View → Line Numbers, or Settings → Editor), next to the text column
 - Slash commands: `/` at the start of a line or after a space lists every menu command, filtered as you type;
   Enter runs it (Settings → Editor)

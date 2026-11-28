@@ -8,6 +8,7 @@
 
 class ExternalChangeBar;
 class FindBar;
+class QLineEdit;
 class MarkdownEditor;
 
 // One open file: the editor widget plus the file it's bound to.
@@ -66,10 +67,18 @@ public:
 
 signals:
     void stateChanged(); // file path or modified flag changed
+    void renameRequested(const QString &newName); // the inline title was edited: "Name.md"
     void statusMessage(const QString &message);
     void diskCheckFinished();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
+    // Obsidian's inline title: the note's name above its text, editable to rename it.
+    void updateTitle();
+    void alignTitle();
     void mirror(int position, int removed, int added);
     void shareFileState(); // after a save or reload: the twin has the same file version now
 
@@ -82,6 +91,7 @@ private:
 
     FindBar *m_findBar;
     ExternalChangeBar *m_changeBar;
+    QLineEdit *m_title;
     Document m_document;
     QFutureWatcher<DiskCheck> m_diskCheck;
     QString m_checkedPath;

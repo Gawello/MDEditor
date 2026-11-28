@@ -256,7 +256,7 @@ settings in new window ➖.
 | Default view for new tabs (editing / reading) | ❌ |
 | Default editing mode (Live Preview / Source) | 🟡 per file type |
 | Show editing mode in status bar | ❌ |
-| Inline title | ❌ |
+| Inline title | ✅ |
 | Readable line length | ✅ |
 | Strict line breaks | ❌ |
 | Properties in document (visible / hidden / source) | ❌ |

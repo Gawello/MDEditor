@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QLineEdit>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -169,5 +170,42 @@ TEST_CASE(same_name_notes_are_linked_by_path)
     // Links to the other Home are left alone.
     CHECK(readText(folder.path("deep/Home.md")) == "# Gamma\n");
     CHECK(readText(folder.path("Alpha.md")).endsWith("[up](Home.md) [[Home]]\n"));
+    prepare(QStringLiteral("ask"));
+}
+
+TEST_CASE(renaming_from_the_inline_title)
+{
+    prepare(QStringLiteral("always"));
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::inlineTitleKey), true);
+    Folder folder;
+    Window w(folder);
+    EditorTab *home = nullptr;
+    for (EditorTab *tab : w.window.findChildren<EditorTab *>()) {
+        if (tab->filePath() == folder.path("Home.md"))
+            home = tab;
+    }
+    CHECK(home != nullptr);
+    if (!home)
+        return;
+    QLineEdit *title = home->findChild<QLineEdit *>();
+    CHECK(title && title->isVisible() && title->text() == "Home");
+    if (!title)
+        return;
+    title->setText(QStringLiteral("Start page"));
+    emit title->editingFinished();
+    QCoreApplication::processEvents();
+    CHECK(QFile::exists(folder.path("Start page.md")) && !QFile::exists(folder.path("Home.md")));
+    CHECK(home->filePath() == folder.path("Start page.md") && title->text() == "Start page");
+    CHECK(readText(folder.path("Alpha.md")).contains("[[Start page]]")); // links followed
+    // A name that can't be a file name is refused, and the title shows the real name again.
+    title->setText(QStringLiteral("bad/name"));
+    emit title->editingFinished();
+    QCoreApplication::processEvents();
+    CHECK(home->filePath() == folder.path("Start page.md"));
+    CHECK(title->text() == "Start page");
+    // Turned off: hidden.
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::inlineTitleKey), false);
+    CHECK(!title->isVisible());
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::inlineTitleKey), true);
     prepare(QStringLiteral("ask"));
 }

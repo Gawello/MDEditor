@@ -3,12 +3,15 @@
 #include "app/AppSettings.h"
 #include "app/Background.h"
 #include "app/ExternalChangeBar.h"
+#include "app/FileActions.h"
 #include "app/FindBar.h"
 #include "document/Encodings.h"
 #include "editor/MarkdownEditor.h"
 #include "plugins/PluginManager.h"
 
 #include <QFileInfo>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -18,14 +21,47 @@ EditorTab::EditorTab(QWidget *parent)
     , m_editor(new MarkdownEditor(this))
     , m_findBar(new FindBar(m_editor, this))
     , m_changeBar(new ExternalChangeBar(this))
+    , m_title(new QLineEdit(this))
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(m_changeBar);
     layout->addWidget(m_findBar);
+    layout->addWidget(m_title);
     layout->addWidget(m_editor);
     setFocusProxy(m_editor);
+
+    m_title->setFrame(false);
+    m_title->setBackgroundRole(QPalette::Base);
+    m_title->setAutoFillBackground(true);
+    m_title->setToolTip(tr("The note's name: edit it to rename the file"));
+    m_title->installEventFilter(this);
+    connect(m_title, &QLineEdit::editingFinished, this, [this] {
+        const QString name = m_title->text().trimmed();
+        const QString current = QFileInfo(filePath()).completeBaseName();
+        if (name.isEmpty() || name == current || isUntitled()) {
+            m_title->setText(current);
+            return;
+        }
+        const QString fileName = name + u'.' + QFileInfo(filePath()).suffix();
+        if (const QString problem = FileActions::checkName(fileName); !problem.isEmpty()) {
+            emit statusMessage(problem); // not a dialog for something typed in place
+            m_title->setText(current);
+            return;
+        }
+        emit renameRequested(fileName);
+        m_title->setText(QFileInfo(filePath()).completeBaseName()); // renamed (or refused): the name it has now
+    });
+    connect(m_title, &QLineEdit::returnPressed, m_editor, [this] { m_editor->setFocus(); });
+    connect(this, &EditorTab::stateChanged, this, &EditorTab::updateTitle);
+    connect(m_editor, &MarkdownEditor::markdownModeChanged, this, &EditorTab::updateTitle);
+    connect(&AppSettings::instance(), &AppSettings::changed, this, [this](const QString &key) {
+        if (key == QLatin1String(AppSettings::inlineTitleKey) || key == QLatin1String(AppSettings::fontSizeKey)
+            || key == QLatin1String(AppSettings::fontFamilyKey) || key == QLatin1String(AppSettings::readableWidthKey))
+            updateTitle();
+    });
+    updateTitle();
 
     connect(m_editor->document(), &QTextDocument::modificationChanged, this, &EditorTab::stateChanged);
     connect(m_editor->document(), &QTextDocument::contentsChange, this, &EditorTab::mirror);
@@ -36,6 +72,54 @@ EditorTab::EditorTab(QWidget *parent)
             emit statusMessage(tr("Cannot reload %1: %2").arg(displayName(), error));
     });
     connect(m_changeBar, &ExternalChangeBar::keepRequested, this, &EditorTab::keepMyVersion);
+}
+
+void EditorTab::updateTitle()
+{
+    const bool shown = AppSettings::instance().inlineTitle() && !isUntitled() && m_editor->markdownMode();
+    m_title->setVisible(shown);
+    if (!shown)
+        return;
+    if (!m_title->hasFocus())
+        m_title->setText(QFileInfo(filePath()).completeBaseName());
+    QFont font = m_editor->font();
+    font.setPointSizeF(font.pointSizeF() * 1.8); // about a level-1 heading
+    font.setBold(true);
+    m_title->setFont(font);
+    alignTitle();
+}
+
+void EditorTab::alignTitle()
+{
+    // Over the text column (the editor centers it with viewport margins).
+    // QLineEdit pads its text by 2 px of its own.
+    const int left = m_editor->viewport()->geometry().left() + int(m_editor->document()->documentMargin()) - 2;
+    m_title->setTextMargins(std::max(0, left), 12, 0, 4);
+}
+
+bool EditorTab::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_title && event->type() == QEvent::KeyPress) {
+        const int key = static_cast<QKeyEvent *>(event)->key();
+        if (key == Qt::Key_Escape) { // back to the name it has, into the text
+            m_title->setText(QFileInfo(filePath()).completeBaseName());
+            m_editor->setFocus();
+            return true;
+        }
+        if (key == Qt::Key_Down) {
+            m_editor->moveCursor(QTextCursor::Start);
+            m_editor->setFocus();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void EditorTab::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_title->isVisible())
+        QMetaObject::invokeMethod(this, &EditorTab::alignTitle, Qt::QueuedConnection); // after the editor's margins
 }
 
 bool EditorTab::isModified() const

@@ -1211,6 +1211,13 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
     connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
     connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
     connect(tab->editor(), &MarkdownEditor::deleteFileRequested, this, &MainWindow::deletePath);
+    connect(tab, &EditorTab::renameRequested, this, [this, tab](const QString &name) {
+        // Queued: the rename may ask about links, and the title field is still finishing its edit.
+        QMetaObject::invokeMethod(this, [this, guard = QPointer<EditorTab>(tab), name] {
+            if (guard && !guard->isUntitled())
+                renamePath(guard->filePath(), name);
+        }, Qt::QueuedConnection);
+    });
     connect(tab->editor(), &MarkdownEditor::searchRequested, this, [this](const QString &text) {
         m_sideBar->show();
         m_sideBar->showPage(m_search);

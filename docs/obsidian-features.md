@@ -64,7 +64,7 @@ any text file can be edited, not just Markdown.
 | Paste and drop images (saved as attachments) | ✅ | | | |
 | Drop files to link them | ✅ | Notes as [[links]], other files as relative links | | |
 | Find and replace with regular expressions | ✅ | | | |
-| Inline title (file name editable above the note) | ❌ | Renames the file | P2 | S |
+| Inline title (file name editable above the note) | ✅ | Doesn't scroll with the note | | |
 | Formatting commands and toolbar (Format menu) | ✅ | Plus right-click menus | | |
 | Word and character count | ✅ | | | |
 | Move line up / down, delete paragraph (Ctrl+D) | ✅ | Alt+↑/↓ | | |
