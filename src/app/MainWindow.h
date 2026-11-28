@@ -137,6 +137,7 @@ private:
     QList<PaletteDialog::Item> commandItems();
 public:
     QList<CompletionItem> slashCommands(const QString &query); // "/query" in the editor
+    void addBlockId(const QString &path, int line, const QString &text, const QString &id); // " ^id" at the end
 private:
     void toggleSidePage(QWidget *page); // shows the sidebar on `page`, or hides it if it's showing it already
     // Opens `path` and selects [column, column + length) on `line` (0-based).

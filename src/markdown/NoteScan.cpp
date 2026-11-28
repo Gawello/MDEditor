@@ -186,6 +186,12 @@ NoteScan scanNote(std::u16string_view text)
             continue;
 
         const std::u16string_view content = line.substr(std::min<size_t>(info.contentStart, line.size()));
+        if (BlockId block; !blockId(content, block)
+                           && (info.type == BlockType::Paragraph || info.isList() || info.type == BlockType::Quote)
+                           && !trim(content).empty()) {
+            const std::u16string_view text = trim(content);
+            scan.paragraphs.push_back({{}, std::u16string(text.substr(0, 120)), number});
+        }
         if (BlockId block; blockId(content, block)) {
             block.line = number;
             if (block.text.empty()) { // "^id" alone names the block above it

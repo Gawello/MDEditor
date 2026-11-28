@@ -2,10 +2,14 @@
 #include "app/AppSettings.h"
 #include "app/EditorTab.h"
 #include "app/MainWindow.h"
+#include "editor/CompletionPopup.h"
 #include "editor/MarkdownEditor.h"
+#include "markdown/NoteScan.h"
 #include "notes/NoteIndex.h"
 
+#include <QApplication>
 #include <QDir>
+#include <QKeyEvent>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QSettings>
@@ -93,4 +97,43 @@ TEST_CASE(note_composer_extracts_and_merges)
         tab->editor()->document()->setModified(false);
     window.close();
     AppSettings::instance().setValue(QString::fromLatin1(AppSettings::updateLinksKey), QStringLiteral("ask"));
+}
+
+TEST_CASE(block_links_give_blocks_their_id)
+{
+    QSettings().remove(QStringLiteral("session"));
+    QSettings().remove(QStringLiteral("window"));
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), false);
+    QTemporaryDir dir;
+    const QString home = dir.filePath(QStringLiteral("Home.md"));
+    writeNote(home, "# Home\n\n");
+    writeNote(dir.filePath(QStringLiteral("Other.md")), "# Other\nFirst thought here.\n- a list item\nKept ^old1\n");
+    MainWindow window;
+    window.show();
+    CHECK(window.openFile(home));
+    auto *index = window.findChild<NoteIndex *>();
+    CHECK(waitFor([index] { return !index->scanning() && index->notes().size() == 2; }));
+    MarkdownEditor *editor = tabOf(window, home)->editor();
+    editor->setFocus();
+    editor->moveCursor(QTextCursor::End);
+    for (const QChar c : QStringLiteral("[[Other#^thought")) {
+        QKeyEvent press(QEvent::KeyPress, 0, Qt::NoModifier, QString(c));
+        QApplication::sendEvent(editor, &press);
+    }
+    CHECK(editor->completionPopup() && editor->completionPopup()->isVisible());
+    CHECK(editor->completionPopup() && editor->completionPopup()->items().value(0).label == "First thought here.");
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(editor, &enter);
+    QCoreApplication::processEvents();
+    const QString line = editor->document()->lastBlock().text();
+    CHECK(line.startsWith("[[Other#^") && line.endsWith("]]") && line.size() == 17);
+    const QString id = line.mid(9, 6);
+    CHECK(waitFor([&dir, &id] { return readText(dir.filePath(QStringLiteral("Other.md"))).contains("First thought here. ^" + id + "\n"); }));
+    // Blocks that have an id are offered with it.
+    const md::NoteScan scan = md::scanNote(u"text ^aa\nplain\n- item\n# Head\n");
+    CHECK(scan.blocks.size() == 1 && scan.paragraphs.size() == 2 && scan.paragraphs[1].text == u"item");
+    for (EditorTab *tab : window.findChildren<EditorTab *>())
+        tab->editor()->document()->setModified(false);
+    window.close();
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::autoPairBracketsKey), true);
 }

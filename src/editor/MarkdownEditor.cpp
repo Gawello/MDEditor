@@ -881,6 +881,8 @@ void MarkdownEditor::acceptCompletion(int row)
     cursor.endEditBlock();
     setTextCursor(cursor);
     m_completionStart = -1;
+    if (item.then)
+        QMetaObject::invokeMethod(this, item.then, Qt::QueuedConnection);
 }
 
 QString MarkdownEditor::withImageWidth(const QString &line, int width)

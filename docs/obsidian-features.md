@@ -38,7 +38,7 @@ any text file can be edited, not just Markdown.
 | Images `![](…)`, `![[…]]`, with width `\|300` | ✅ | Local files only | | |
 | Remote (http) images | ✅ | Disk cache, can be turned off | | |
 | Embedded notes `![[Note]]` and sections `![[Note#Heading]]` | ✅ | | | |
-| Embedded blocks `![[Note#^id]]` | ❌ | Depends on block references | P2 | S |
+| Embedded blocks `![[Note#^id]]` | ✅ | | | |
 | Embedded PDF, audio, video | ❌ | PDF needs QtPdf; audio/video QtMultimedia | P3 | M |
 | Embedded search results (` ```query `) | ❌ | | P3 | M |
 | Strict line breaks option | ❌ | Rendering-only option | P3 | S |
@@ -84,7 +84,7 @@ any text file can be edited, not just Markdown.
 | `[[Wiki links]]` and `[text](path.md)`, Ctrl+click opens | ✅ | Resolved anywhere in the open folder | | |
 | Link autocomplete while typing `[[` | ✅ | Notes, aliases, files, `#` headings, `#^` block ids | | |
 | Links to headings `[[Note#Heading]]` | ✅ | Also `#^block`, `[[#Heading]]`, slugs in Markdown links | | |
-| Block references `^id` and `[[Note#^id]]` | ❌ | | P2 | M |
+| Block references `^id` and `[[Note#^id]]` | ✅ | Picking a block without an id gives it one | | |
 | Aliases (`[[Note\|alias]]`, `aliases:` property) | ✅ | Links and the quick switcher find notes by alias | | |
 | Click a link to a missing note to create it | ✅ | Where new notes go (Settings → Notes); unresolved links aren't dimmed yet | | |
 | Update links when a file is renamed or moved | ✅ | Ask / always / never; folders too; open and closed notes | | |

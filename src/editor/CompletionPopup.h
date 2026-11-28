@@ -23,6 +23,7 @@ struct CompletionItem {
     QString detail; // shown dimmed on the right
     QString insert; // replaces what was typed
     std::function<void()> run; // a command: what was typed (with its "/") goes, then this runs
+    std::function<void()> then; // runs after the item is inserted (a block link: give the block its id)
 };
 
 // The list of suggestions under the cursor ([[links]], #tags). A frameless tool-tip window that never takes

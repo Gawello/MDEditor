@@ -211,7 +211,14 @@ MainWindow::MainWindow(QWidget *parent)
         if (context.kind == md::CompletionKind::Command)
             return window && AppSettings::instance().slashCommands() ? window->slashCommands(QString::fromStdU16String(context.query))
                                                                      : QList<CompletionItem>();
-        return index ? Completions::suggest(*index, context, from, text) : QList<CompletionItem>();
+        if (!index)
+            return QList<CompletionItem>();
+        // A block link to a paragraph without an id: the note gets " ^id" on that line.
+        const auto addBlockId = [window](const QString &path, int line, const QString &text, const QString &id) {
+            if (window)
+                window->addBlockId(path, line, text, id);
+        };
+        return Completions::suggest(*index, context, from, text, addBlockId);
     });
 
     m_splitter->addWidget(m_folderPanel);
@@ -1642,6 +1649,28 @@ QList<PaletteDialog::Item> MainWindow::commandItems()
             collect(menu, action->text().remove(u'&'));
     }
     return items;
+}
+
+void MainWindow::addBlockId(const QString &path, int line, const QString &text, const QString &id)
+{
+    // The line it was, or (the note changed since) the first line with that text.
+    const QStringList failures = changeNotes({{path, [line, text, id](const QString &note) -> std::optional<QString> {
+        QStringList lines = note.split(u'\n');
+        const auto fits = [&text](const QString &candidate) { return candidate.trimmed().contains(text.left(60)); };
+        int at = line >= 0 && line < lines.size() && fits(lines[line]) ? line : -1;
+        for (int i = 0; at < 0 && i < lines.size(); ++i) {
+            if (fits(lines[i]))
+                at = i;
+        }
+        if (at < 0)
+            return std::nullopt;
+        while (lines[at].endsWith(u' '))
+            lines[at].chop(1);
+        lines[at] += QStringLiteral(" ^") + id;
+        return lines.join(u'\n');
+    }}});
+    if (!failures.isEmpty())
+        statusBar()->showMessage(failures.join(u' '), 8000);
 }
 
 QList<CompletionItem> MainWindow::slashCommands(const QString &query)

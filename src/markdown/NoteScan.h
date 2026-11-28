@@ -43,6 +43,9 @@ struct NoteScan {
     std::vector<NoteLink> links;      // local targets only, not URLs
     std::vector<Property> properties; // frontmatter
     std::vector<BlockId> blocks;
+    // Paragraphs, list items and quotes without an id (text cut to 120 characters): what a block link can name
+    // once it gets one.
+    std::vector<BlockId> paragraphs;
     int frontmatterEnd = -1;          // line of the closing "---", -1 without frontmatter
 };
 

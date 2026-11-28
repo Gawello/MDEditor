@@ -9,6 +9,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QRandomGenerator>
 
 #include <algorithm>
 #include <vector>
@@ -58,8 +59,17 @@ md::NoteScan scanOf(const NoteIndex &index, const QString &path, const QString &
 
 } // namespace
 
+QString newBlockId()
+{
+    static const QString alphabet = QStringLiteral("abcdefghijklmnopqrstuvwxyz0123456789");
+    QString id;
+    for (int i = 0; i < 6; ++i)
+        id += alphabet.at(int(QRandomGenerator::global()->bounded(int(alphabet.size()))));
+    return id;
+}
+
 QList<Suggestion> suggest(const NoteIndex &index, const md::CompletionContext &context, const QString &from,
-                          const QString &text)
+                          const QString &text, const BlockIdAdder &addBlockId)
 {
     const QString query = QString::fromStdU16String(context.query);
     QList<Ranked> ranked;
@@ -131,10 +141,20 @@ QList<Suggestion> suggest(const NoteIndex &index, const md::CompletionContext &c
     case md::CompletionKind::Block: {
         const QString note = QString::fromStdU16String(context.note);
         const QString path = note.isEmpty() ? from : index.resolve(note, true, from);
-        for (const md::BlockId &block : scanOf(index, path, from, text).blocks) {
+        const md::NoteScan scan = scanOf(index, path, from, text);
+        for (const md::BlockId &block : scan.blocks) {
             const QString id = QString::fromStdU16String(block.id);
             const QString label = QString::fromStdU16String(block.text);
             add(match(query, id, label), {label.isEmpty() ? id : label, u'^' + id, id});
+        }
+        if (addBlockId && !path.isEmpty()) { // the others get an id when picked
+            for (const md::BlockId &block : scan.paragraphs) {
+                const QString label = QString::fromStdU16String(block.text);
+                const QString id = newBlockId();
+                Suggestion item{label, QString(), id};
+                item.then = [addBlockId, path, line = block.line, label, id] { addBlockId(path, line, label, id); };
+                add(match(query, label), item);
+            }
         }
         break;
     }
