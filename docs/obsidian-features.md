@@ -62,7 +62,7 @@ any text file can be edited, not just Markdown.
 | Slash commands (`/` menu in the text) | ❌ | Reuse the command palette | P2 | S |
 | Convert pasted HTML to Markdown | ✅ | Paste and drop; Ctrl+Shift+V pastes plain text | | |
 | Paste and drop images (saved as attachments) | ✅ | | | |
-| Drop files to link them | 🟡 | Images only; other files should get links too | P2 | S |
+| Drop files to link them | ✅ | Notes as [[links]], other files as relative links | | |
 | Find and replace with regular expressions | ✅ | | | |
 | Inline title (file name editable above the note) | ❌ | Renames the file | P2 | S |
 | Formatting commands and toolbar (Format menu) | ✅ | Plus right-click menus | | |
@@ -71,7 +71,7 @@ any text file can be edited, not just Markdown.
 | Toggle checkbox (Ctrl+L), cycle bullet → checkbox → plain | ✅ | | | |
 | Follow the link under the cursor from the keyboard (Alt+Enter; Ctrl+Enter in a new tab) | ✅ | Ctrl+Alt+Enter: other pane | | |
 | Insert current date / time | ❌ | Template date formats | P3 | S |
-| "Search for “selection”" in the right-click menu | ❌ | Opens folder search | P2 | S |
+| "Search for “selection”" in the right-click menu | ✅ | | | |
 | Image right-click menu: copy image, swap file, remove, delete file; resize by dragging | ❌ | Width goes into `\|300` | P2 | M |
 | Callout right-click: change type (Info, Tip, Warning…), edit | ❌ | | P3 | S |
 | Edit link / edit tag dialogs, "Delete footnote and reference" | ❌ | | P3 | S |

@@ -5,7 +5,13 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDir>
+#include <QDragEnterEvent>
+#include <QFile>
 #include <QKeyEvent>
+#include <QMenu>
+#include <QTemporaryDir>
+#include <QUrl>
 #include <QMimeData>
 #include <QTextBlock>
 
@@ -260,4 +266,93 @@ TEST_CASE(copying_gives_the_markdown_as_plain_text)
     const QMimeData *data = QGuiApplication::clipboard()->mimeData();
     CHECK(data && !data->hasHtml());
     CHECK(data && data->text() == note); // the non-breaking space too
+}
+
+namespace {
+
+void dropFiles(MarkdownEditor &editor, const QStringList &files, const QPoint &at)
+{
+    QMimeData data;
+    QList<QUrl> urls;
+    for (const QString &file : files)
+        urls << QUrl::fromLocalFile(file);
+    data.setUrls(urls);
+    QDragEnterEvent enter(at, Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &enter);
+    QDragMoveEvent move(at, Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &move);
+    QDropEvent drop(QPointF(at), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(editor.viewport(), &drop);
+}
+
+} // namespace
+
+TEST_CASE(dropped_files_become_links)
+{
+    QTemporaryDir dir;
+    const auto touch = [&dir](const QString &name) {
+        QDir().mkpath(QFileInfo(dir.filePath(name)).absolutePath());
+        QFile file(dir.filePath(name));
+        CHECK(file.open(QIODevice::WriteOnly));
+        return QDir::cleanPath(dir.filePath(name));
+    };
+    const QString report = touch(QStringLiteral("docs/Q1 report.pdf"));
+    const QString note = touch(QStringLiteral("Other.md"));
+    MarkdownEditor::setLinkResolver([](const QString &target, bool, const QString &from) {
+        const QString path = QFileInfo(from).dir().filePath(target + QStringLiteral(".md"));
+        return QFileInfo::exists(path) ? QDir::cleanPath(path) : QString();
+    });
+    MarkdownEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.resize(600, 400);
+    editor.show();
+    editor.setDocumentPath(dir.filePath(QStringLiteral("Here.md")));
+    editor.setMarkdown(QStringLiteral("See"));
+    editor.moveCursor(QTextCursor::End);
+    dropFiles(editor, {report, note}, editor.cursorRect().center());
+    CHECK(text(editor) == "See [Q1 report.pdf](docs/Q1%20report.pdf) [[Other]]");
+    editor.undo();
+    CHECK(text(editor) == "See");
+
+    // Plain-text files open what's dropped instead.
+    QStringList opened;
+    QObject::connect(&editor, &MarkdownEditor::filesDropped, [&opened](const QStringList &files) { opened = files; });
+    editor.setMarkdownMode(false);
+    dropFiles(editor, {report}, editor.cursorRect().center());
+    CHECK(opened == QStringList{report} && text(editor) == "See");
+    MarkdownEditor::setLinkResolver({});
+}
+
+TEST_CASE(search_for_the_selection)
+{
+    MarkdownEditor editor;
+    editor.setMarkdown(QStringLiteral("find this word\nnext"));
+    select(editor, 5, 9);
+    std::unique_ptr<QMenu> menu = editor.createContextMenu(editor.cursorRect().center());
+    QAction *search = nullptr;
+    for (QAction *action : menu->actions()) {
+        if (action->text().remove(u'&') == QStringLiteral("Search for “this”"))
+            search = action;
+    }
+    CHECK(search != nullptr);
+    QString asked;
+    QObject::connect(&editor, &MarkdownEditor::searchRequested, [&asked](const QString &text) { asked = text; });
+    if (search)
+        search->trigger();
+    CHECK(asked == "this");
+    // Mnemonics stay unique with it.
+    QSet<QChar> keys;
+    for (QAction *action : menu->actions()) {
+        const QString label = action->text().section(u'\t', 0, 0);
+        const qsizetype amp = label.indexOf(u'&');
+        if (amp >= 0 && amp + 1 < label.size() && label[amp + 1] != u'&') {
+            CHECK(!keys.contains(label[amp + 1].toLower()));
+            keys.insert(label[amp + 1].toLower());
+        }
+    }
+    // Several lines: no entry.
+    select(editor, 0, 17);
+    menu = editor.createContextMenu(editor.cursorRect().center());
+    for (QAction *action : menu->actions())
+        CHECK(!action->text().startsWith(QStringLiteral("&Search for")));
 }

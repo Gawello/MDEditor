@@ -53,6 +53,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
 - Brackets and quotes close themselves (`(`, `[`, `{`, `"`, `'` at the start of a word, `` ` ``), typing the closing
   one steps over it, Backspace in an empty pair removes both; a selection is wrapped by typing `*`, `=`, `~`, `$`,
   `` ` `` or a bracket (Settings → Editor)
+- Files dropped into a note become links (`[[Note]]`, or a relative link for other files; images are shown);
+  dropped on the tab bar they open. Right-click a selection: Search for “…” in the folder
 - Formatted text pasted or dropped from web pages, Word or Excel becomes Markdown (headings, emphasis, links, images,
   lists, tables, code); Ctrl+Shift+V pastes plain text. Copying gives the Markdown itself, as plain text
 - Formatting shortcuts: Ctrl+B, Ctrl+I, Ctrl+\`, Ctrl+Shift+X (strike), Ctrl+Shift+H (highlight)

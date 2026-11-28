@@ -1071,8 +1071,8 @@ void MarkdownEditor::dropEvent(QDropEvent *event)
             (isImageFile(file) ? images : documents) << file;
         if (!images.isEmpty())
             insertImageLinks(images, cursorForPosition(event->position().toPoint()));
-        if (!documents.isEmpty())
-            emit filesDropped(documents);
+        if (!documents.isEmpty()) // as in Obsidian: a link (dropping on the tab bar opens the file)
+            insertFileLinks(documents, images.isEmpty() ? cursorForPosition(event->position().toPoint()) : textCursor());
         return;
     }
     QPlainTextEdit::dropEvent(event);
@@ -1211,6 +1211,32 @@ void MarkdownEditor::pasteImage(const QImage &image)
 }
 
 // Inserts one image link per line after the cursor's line.
+void MarkdownEditor::insertFileLinks(const QStringList &files, QTextCursor cursor)
+{
+    QStringList links;
+    for (const QString &file : files) {
+        const QFileInfo info(file);
+        const QString name = isMarkdownFile(file) ? info.completeBaseName() : info.fileName();
+        if (QDir::cleanPath(resolveLink(name, true)) == QDir::cleanPath(info.absoluteFilePath())) {
+            links << QStringLiteral("[[%1]]").arg(name);
+            continue;
+        }
+        QString path = m_baseDirectory.isEmpty() ? info.absoluteFilePath() : QDir(m_baseDirectory).relativeFilePath(file);
+        path.replace(u'%', QStringLiteral("%25")).replace(u' ', QStringLiteral("%20"));
+        path.replace(u'(', QStringLiteral("%28")).replace(u')', QStringLiteral("%29"));
+        links << QStringLiteral("[%1](%2)").arg(name, path);
+    }
+    cursor.clearSelection();
+    cursor.beginEditBlock();
+    const QString before = cursor.block().text().left(cursor.positionInBlock());
+    if (!before.isEmpty() && !before.back().isSpace())
+        cursor.insertText(QStringLiteral(" "));
+    cursor.insertText(links.join(u' '));
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+    setFocus();
+}
+
 void MarkdownEditor::insertImageLinks(const QStringList &files, QTextCursor cursor)
 {
     cursor.clearSelection();
@@ -2816,6 +2842,14 @@ std::unique_ptr<QMenu> MarkdownEditor::createContextMenu(const QPoint &pos)
         }
         if (cursorInTable()) {
             addTableActions(menu->addMenu(tr("Ta&ble")));
+            menu->addSeparator();
+        }
+        // Obsidian's "Search for …": the selection (one line of it) in the folder search.
+        if (const QString selected = textCursor().selectedText().trimmed();
+            !selected.isEmpty() && !selected.contains(QChar::ParagraphSeparator)) {
+            const QString shown = selected.size() > 30 ? selected.left(29) + QStringLiteral("…") : selected;
+            menu->addAction(tr("&Search for “%1”").arg(QString(shown).replace(u'&', QStringLiteral("&&"))), this,
+                            [this, selected] { emit searchRequested(selected); });
             menu->addSeparator();
         }
         addLinkActions(menu.get(), self, false);

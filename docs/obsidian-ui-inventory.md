@@ -38,7 +38,7 @@ The menu is built from groups; which groups appear depends on what's under the m
 
 | Target | Entries | MDEditor |
 |---|---|---|
-| Selection | Search for “…” (opens search with the selected text) | ❌ |
+| Selection | Search for “…” (opens search with the selected text) | ✅ |
 | Selection | Extract current selection… (to a new note, leaves a link) | ❌ |
 | Cursor in a section | Rename this heading… (updates links to it) | ❌ |
 | Cursor in a section | Bookmark this heading… | ❌ |

@@ -144,6 +144,7 @@ signals:
     void linkRequested(const QString &path, const QString &anchor, bool toTheRight);
     void revealRequested(const QString &path); // the link menu's Reveal in Folder Panel
     void renameRequested(const QString &path); // ...and Rename
+    void searchRequested(const QString &text);  // the menu's Search for “selection”
     void filesDropped(const QStringList &paths);
     void statusMessage(const QString &message);
     void markdownModeChanged(bool on);
@@ -208,6 +209,8 @@ private:
     CachedImage *cachedImage(const QString &target) const;
     QSizeF imageDisplaySize(const QString &target, int requestedWidth) const;
     void paintImage(QPainter &painter, const QTextBlock &block, const QString &target, int requestedWidth) const;
+    // Links to dropped files at the cursor: [[Name]] for a note the name finds, else a relative Markdown link.
+    void insertFileLinks(const QStringList &files, QTextCursor cursor);
     void insertImageLinks(const QStringList &files, QTextCursor cursor);
     void pasteImage(const QImage &image);
     TableGeometry tableGeometry(const QTextBlock &header) const;

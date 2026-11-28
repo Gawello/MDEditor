@@ -1200,6 +1200,11 @@ EditorTab *MainWindow::addTab(QTabWidget *pane)
             });
     connect(tab->editor(), &MarkdownEditor::revealRequested, this, &MainWindow::revealInFolderPanel);
     connect(tab->editor(), &MarkdownEditor::renameRequested, this, &MainWindow::renameFile);
+    connect(tab->editor(), &MarkdownEditor::searchRequested, this, [this](const QString &text) {
+        m_sideBar->show();
+        m_sideBar->showPage(m_search);
+        m_search->focusSearch(text);
+    });
     connect(tab->editor(), &QPlainTextEdit::selectionChanged, this, [this, tab] {
         if (tab == currentTab())
             updateWordCount();
