@@ -136,6 +136,10 @@ public:
     // Follows a link as written ("Note#Heading", "path/x.md", a URL), as Ctrl+click does.
     void openLink(const QString &target, bool toTheRight = false);
     CompletionPopup *completionPopup() const { return m_completion; } // null until first needed
+    // Line numbers in a strip left of the text (Settings / View → Line Numbers); null while off.
+    QWidget *lineNumberArea() const { return m_lineNumbers; }
+    int lineNumberWidth() const;
+    void paintLineNumbers(QPaintEvent *event);
 
 signals:
     // A link to a note or text file was followed: `path` (absolute; it may not exist yet, then the note is to be
@@ -270,6 +274,8 @@ private:
     void acceptCompletion(int row);
     void hideCompletion();
     CompletionPopup *m_completion = nullptr;
+    QWidget *m_lineNumbers = nullptr;
+    void updateLineNumbers();
     // Page preview: shown after the mouse rests on a link with Ctrl held.
     void startPreview(const QPoint &viewportPos);
     NotePreview *m_preview = nullptr;

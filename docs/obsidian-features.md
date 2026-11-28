@@ -53,7 +53,7 @@ any text file can be edited, not just Markdown.
 | Auto-pair Markdown syntax (`**`, `` ` ``, `==`) | ✅ | Wraps a selection; `` ` `` pairs | | |
 | Fold headings | ✅ | | | |
 | Fold indentation (lists) | ✅ | | | |
-| Line numbers | ❌ | Useful for code files | P2 | S |
+| Line numbers | ✅ | View → Line Numbers | | |
 | Indentation guides for lists | ❌ | | P3 | S |
 | Indent with tabs or spaces, tab width | 🟡 | Width setting only | P3 | S |
 | Spell checking | ✅ | Hunspell, several languages | | |

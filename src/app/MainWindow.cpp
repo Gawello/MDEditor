@@ -417,6 +417,12 @@ void MainWindow::createMenus()
                                                                                 : QPlainTextEdit::NoWrap);
     });
     wordWrap->setCheckable(true);
+    QAction *lineNumbers = view->addAction(tr("Line Numb&ers"), this, [] {
+        AppSettings &settings = AppSettings::instance();
+        settings.setValue(QString::fromLatin1(AppSettings::lineNumbersKey), !settings.lineNumbers());
+    });
+    lineNumbers->setCheckable(true);
+    connect(view, &QMenu::aboutToShow, lineNumbers, [lineNumbers] { lineNumbers->setChecked(AppSettings::instance().lineNumbers()); });
     connect(view, &QMenu::aboutToShow, this, [this, togglePanel, toggleSideBar, livePreview, wordWrap] {
         togglePanel->setChecked(m_folderPanel->isVisible());
         toggleSideBar->setChecked(m_sideBar->isVisible());

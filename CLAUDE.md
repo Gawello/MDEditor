@@ -183,6 +183,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   `MainWindow::followLink` creates a missing note, opens it (or `openToTheRight`), and scrolls to
   `NoteIndex::findAnchor` (headings by text or slug, `^block` ids) with `scrollToLine`. Aliases live in
   `NoteIndex::m_byAlias` and are tried after file names.
+- Line numbers: a child widget in the viewport's left margin (`updateMargins` makes the margin at least as wide),
+  painted by `MarkdownEditor::paintLineNumbers` from the block geometry; lines collapsed to nothing get no number,
+  image/embed/formula lines get theirs at the top.
 - Auto-pairing: `md::pairFor`/`deletesPair` (Qt-free) decide, `MarkdownEditor::autoPair` (start of `keyPressEvent`)
   edits; brackets in every mode, Markdown markers only in Markdown mode; AltGr (Ctrl+Alt) counts as typing.
 - Suggestions: `md::completionAt` (Qt-free) says what's being typed at the cursor; `Completions::suggest` ranks

@@ -45,6 +45,7 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   note's links, those to notes not created yet apart. Ctrl+hover over a link previews the note
 - Renaming or moving a note or folder in the open folder updates the links to it (and the relative links of the
   notes it holds): asked first by default, or always / never (Settings → Notes)
+- Line numbers (View → Line Numbers, or Settings → Editor), next to the text column
 - Slash commands: `/` at the start of a line or after a space lists every menu command, filtered as you type;
   Enter runs it (Settings → Editor)
 - Suggestions while typing: `[[` lists the notes and files of the folder (and aliases), `[[Note#` its headings,

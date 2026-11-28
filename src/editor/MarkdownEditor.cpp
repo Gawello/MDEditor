@@ -183,7 +183,89 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
             applyFontSettings();
         else if (key == QLatin1String(AppSettings::readableWidthKey) || key == QLatin1String(AppSettings::indentSizeKey))
             applyTheme();
+        else if (key == QLatin1String(AppSettings::lineNumbersKey))
+            updateLineNumbers();
     });
+    updateLineNumbers();
+}
+
+namespace {
+
+// The strip with the line numbers, left of the viewport; the editor paints it.
+class LineNumberArea : public QWidget {
+public:
+    explicit LineNumberArea(MarkdownEditor *editor)
+        : QWidget(editor)
+        , m_editor(editor)
+    {
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override { m_editor->paintLineNumbers(event); }
+
+private:
+    MarkdownEditor *m_editor;
+};
+
+} // namespace
+
+void MarkdownEditor::updateLineNumbers()
+{
+    const bool on = AppSettings::instance().lineNumbers();
+    if (on && !m_lineNumbers) {
+        m_lineNumbers = new LineNumberArea(this);
+        connect(this, &QPlainTextEdit::updateRequest, m_lineNumbers, [this](const QRect &rect, int dy) {
+            if (dy)
+                m_lineNumbers->scroll(0, dy);
+            else
+                m_lineNumbers->update(0, rect.y(), m_lineNumbers->width(), rect.height());
+        });
+        connect(this, &QPlainTextEdit::blockCountChanged, this, &MarkdownEditor::updateMargins);
+        connect(this, &QPlainTextEdit::cursorPositionChanged, m_lineNumbers, qOverload<>(&QWidget::update));
+        m_lineNumbers->show();
+    } else if (!on && m_lineNumbers) {
+        delete m_lineNumbers;
+        m_lineNumbers = nullptr;
+    }
+    updateMargins();
+}
+
+int MarkdownEditor::lineNumberWidth() const
+{
+    int digits = 2;
+    for (int count = std::max(1, blockCount()); count >= 100; count /= 10)
+        ++digits;
+    return fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits + 16;
+}
+
+void MarkdownEditor::paintLineNumbers(QPaintEvent *event)
+{
+    QPainter painter(m_lineNumbers);
+    painter.fillRect(event->rect(), palette().base());
+    const int current = textCursor().blockNumber();
+    QTextBlock block = firstVisibleBlock();
+    qreal top = blockBoundingGeometry(block).translated(contentOffset()).top();
+    painter.setFont(font());
+    const int right = m_lineNumbers->width() - 8;
+    while (block.isValid() && top <= event->rect().bottom()) {
+        const qreal height = blockBoundingRect(block).height();
+        // Lines collapsed to nothing (the front matter's "---" outside the cursor) get no number.
+        if (block.isVisible() && top + height >= event->rect().top() && height >= fontMetrics().height() / 2) {
+            painter.setPen(block.blockNumber() == current ? m_theme.text : m_theme.faint);
+            // The first line of the block, aligned with its text (headings are taller).
+            const QTextLayout *layout = block.layout();
+            qreal ascent = layout && layout->lineCount() > 0 ? layout->lineAt(0).ascent() : fontMetrics().ascent();
+            // A line drawn as an image, embed or formula is one tall glyph: its number goes at the top.
+            if (const auto *data = static_cast<const BlockData *>(block.userData()); data && (data->imageShown || data->mathShown))
+                ascent = fontMetrics().ascent() + imageVerticalPadding;
+            const qreal baseline = top + (layout ? layout->position().y() : 0) + ascent;
+            painter.drawText(QPointF(right - fontMetrics().horizontalAdvance(QString::number(block.blockNumber() + 1)),
+                                     baseline),
+                             QString::number(block.blockNumber() + 1));
+        }
+        top += height;
+        block = block.next();
+    }
 }
 
 bool MarkdownEditor::isMarkdownFile(const QString &path)
@@ -1373,8 +1455,15 @@ void MarkdownEditor::updateMargins()
     // Code and other plain text use the whole width: long lines are common and meaningful there.
     const int characters = m_markdown ? AppSettings::instance().readableWidth() : 0;
     const int side = characters > 0 ? std::max(0, (width() - fontMetrics().averageCharWidth() * characters) / 2) : 0;
-    if (viewportMargins().left() != side)
-        setViewportMargins(side, 0, side, 0);
+    // The line numbers sit in the left margin; it grows when it's too narrow for them.
+    const int gutter = m_lineNumbers ? lineNumberWidth() : 0;
+    const int left = std::max(side, gutter);
+    if (viewportMargins().left() != left || viewportMargins().right() != side)
+        setViewportMargins(left, 0, side, 0);
+    if (m_lineNumbers) {
+        const QRect area = contentsRect();
+        m_lineNumbers->setGeometry(area.left() + left - gutter, area.top(), gutter, area.height());
+    }
 }
 
 md::BlockInfo MarkdownEditor::blockInfo(const QTextBlock &block) const

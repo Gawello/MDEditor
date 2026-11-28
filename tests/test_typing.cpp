@@ -385,3 +385,28 @@ TEST_CASE(slash_commands_run_menu_commands)
     editor->document()->setModified(false);
     window.close();
 }
+
+TEST_CASE(line_numbers_follow_the_setting)
+{
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::lineNumbersKey), false);
+    MarkdownEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.resize(800, 400);
+    editor.show();
+    editor.setMarkdown(QStringLiteral("a\nb\nc"));
+    CHECK(editor.lineNumberArea() == nullptr);
+    const int before = editor.viewport()->geometry().left();
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::lineNumbersKey), true);
+    QWidget *area = editor.lineNumberArea();
+    CHECK(area && area->isVisible() && area->width() == editor.lineNumberWidth());
+    // Left of the text, never over it.
+    CHECK(area && area->geometry().right() < editor.viewport()->geometry().left() + 1);
+    CHECK(editor.viewport()->geometry().left() >= before);
+    // Wider for more digits.
+    const int narrow = editor.lineNumberWidth();
+    editor.setMarkdown(QString(QStringLiteral("x\n")).repeated(1200));
+    CHECK(editor.lineNumberWidth() > narrow);
+    CHECK(!editor.grab().isNull()); // paints
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::lineNumbersKey), false);
+    CHECK(editor.lineNumberArea() == nullptr);
+}

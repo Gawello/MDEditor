@@ -451,6 +451,7 @@ QWidget *SettingsDialog::createEditorPage()
         connect(box, &QCheckBox::toggled, this, [name](bool checked) { AppSettings::instance().setValue(name, checked); });
         return box;
     };
+    form->addRow(QString(), toggle(tr("Show line numbers"), AppSettings::lineNumbersKey, AppSettings::instance().lineNumbers()));
     form->addRow(QString(), toggle(tr("Close brackets and quotes as they are typed"), AppSettings::autoPairBracketsKey,
                                    AppSettings::instance().autoPairBrackets()));
     form->addRow(QString(), toggle(tr("Close `code` and wrap a selection in **, ==, ~, $ as they are typed"),

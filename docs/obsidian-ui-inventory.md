@@ -261,7 +261,7 @@ settings in new window ➖.
 | Strict line breaks | ❌ |
 | Properties in document (visible / hidden / source) | ❌ |
 | Fold heading, Fold indent | 🟡 always on |
-| Line numbers | ❌ |
+| Line numbers | ✅ |
 | Indentation guides | ❌ |
 | Right-to-left | ❌ |
 | Spellcheck, Spellcheck languages | ✅ |
