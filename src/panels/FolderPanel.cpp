@@ -19,7 +19,6 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QUrl>
-#include <QCollator>
 #include <QScopedValueRollback>
 #include <QSortFilterProxyModel>
 #include <QSettings>
@@ -118,9 +117,45 @@ public:
     explicit SortProxy(QObject *parent)
         : QSortFilterProxyModel(parent)
     {
-        m_collator.setNumericMode(true);
-        m_collator.setCaseSensitivity(Qt::CaseInsensitive);
         setDynamicSortFilter(true);
+    }
+
+    // "note 2" before "note 10": runs of digits compare as numbers, the rest without case. (QCollator's numeric
+    // mode needs ICU, which not every Qt build has.)
+    static int naturalCompare(const QString &a, const QString &b)
+    {
+        qsizetype i = 0;
+        qsizetype j = 0;
+        while (i < a.size() && j < b.size()) {
+            if (a[i].isDigit() && b[j].isDigit()) {
+                qsizetype ei = i;
+                qsizetype ej = j;
+                while (ei < a.size() && a[ei].isDigit())
+                    ++ei;
+                while (ej < b.size() && b[ej].isDigit())
+                    ++ej;
+                QStringView x = QStringView(a).mid(i, ei - i);
+                QStringView y = QStringView(b).mid(j, ej - j);
+                while (x.size() > 1 && x.front() == u'0')
+                    x = x.mid(1);
+                while (y.size() > 1 && y.front() == u'0')
+                    y = y.mid(1);
+                if (x.size() != y.size())
+                    return x.size() < y.size() ? -1 : 1;
+                if (const int c = x.compare(y); c != 0)
+                    return c;
+                i = ei;
+                j = ej;
+                continue;
+            }
+            const QChar ca = a[i].toCaseFolded();
+            const QChar cb = b[j].toCaseFolded();
+            if (ca != cb)
+                return QString::localeAwareCompare(QString(ca), QString(cb)) < 0 ? -1 : 1;
+            ++i;
+            ++j;
+        }
+        return int(a.size() - i) - int(b.size() - j);
     }
     bool byTime = false;
 
@@ -138,11 +173,8 @@ protected:
             if (a != b)
                 return a < b;
         }
-        return m_collator.compare(model->fileName(left), model->fileName(right)) < 0;
+        return naturalCompare(model->fileName(left), model->fileName(right)) < 0;
     }
-
-private:
-    QCollator m_collator;
 };
 
 FolderPanel::FolderPanel(QWidget *parent)
