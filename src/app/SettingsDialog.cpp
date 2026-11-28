@@ -451,6 +451,8 @@ QWidget *SettingsDialog::createEditorPage()
         connect(box, &QCheckBox::toggled, this, [name](bool checked) { AppSettings::instance().setValue(name, checked); });
         return box;
     };
+    form->addRow(QString(), toggle(tr("Show images from the web (they are downloaded when shown)"),
+                                   AppSettings::remoteImagesKey, AppSettings::instance().remoteImages()));
     form->addRow(QString(), toggle(tr("Show line numbers"), AppSettings::lineNumbersKey, AppSettings::instance().lineNumbers()));
     form->addRow(QString(), toggle(tr("Close brackets and quotes as they are typed"), AppSettings::autoPairBracketsKey,
                                    AppSettings::instance().autoPairBrackets()));

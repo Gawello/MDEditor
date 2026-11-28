@@ -23,7 +23,8 @@ Written in C++20 with Qt 6 Widgets. Runs on Windows and Linux.
   Format → Insert → Table… opens a Word-style grid to insert an empty table
 - Symbols and emoji: the Ω button next to the table button, or Format → Insert → Symbol or Emoji…, opens a drop-down that stays
   open while you insert several in a row, and closes when you click elsewhere, press Esc or leave the application
-- Images: a line holding only `![alt](path)` or `![[path]]` shows the image, scaled to the text column.
+- Images: a line holding only `![alt](path)` or `![[path]]` shows the image, scaled to the text column; images from
+  the web (`https://…`) are downloaded and cached (Settings → Editor can turn that off).
   Set a width with `![[img.png|300]]` or `![alt|300](img.png)`. Paths are relative to the Markdown file.
   Dropping or pasting image files inserts links to them; pasting a screenshot or a copied image saves it
   as `assets/pasted-image-<timestamp>.png` next to the note and links it

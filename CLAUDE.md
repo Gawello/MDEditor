@@ -233,7 +233,7 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   downloads next to itself and renames over it, then restarts; `.deb` (`/opt/mdeditor`) and `.zip` get a link.
   Asset names must match CPack's (`-win64.exe`, `-win64.zip`, `_amd64.deb`, `-x86_64.AppImage`).
 - `MDEDITOR_UPDATE_URL` overrides the API URL (file:// works): tests and the Xvfb check use a local release JSON.
-  This is the app's only network access.
+  Besides this, the network is used only for images from the web (`RemoteImages`, Settings → Editor).
 
 ### Settings, themes, formatting, plugins
 
@@ -300,7 +300,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
   the image (`highlightImageLine`, `BlockData::imageShown`); `MarkdownEditor::paintImage` then draws it.
   Sizes come from the editor through `ImageSizeProvider`; images are cached by absolute path and reloaded
   when the file's mtime changes. Width changes re-run highlighting (debounced), since sizes depend on the
-  text column width. Remote images are not fetched (QtNetwork is only used for update checks).
+  text column width. Images from the web (`RemoteImages`, one app-wide QNetworkAccessManager with a disk cache, 10 MB
+  and 20 s limits, failures not retried) start downloading when first asked for; `loaded` makes editors showing the
+  URL lay out again (`m_imageRelayout`).
 - Math: `InlineParser` marks `$...$` (pandoc rules: no inner spaces at the ends, closing `$` not before a digit) and
   `$$...$$` with `Math`; `BlockParser` has `MathOpen/Line/Close/Single` and `CommentLine` (`%%` blocks), with
   `BlockState::block` encoded as 5 / 7. Outside the cursor line, inline math gets an invisible slot as wide (and

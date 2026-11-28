@@ -2,6 +2,8 @@
 #include "app/AppSettings.h"
 #include "app/MainWindow.h"
 #include "editor/CompletionPopup.h"
+#include "editor/LivePreviewHighlighter.h"
+#include "editor/RemoteImages.h"
 #include "editor/MarkdownEditor.h"
 #include "markdown/LineStyle.h"
 
@@ -10,7 +12,11 @@
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFile>
+#include <QBuffer>
+#include <QElapsedTimer>
 #include <QImage>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QMenu>
@@ -479,4 +485,61 @@ TEST_CASE(images_resize_by_dragging_and_have_a_menu)
             CHECK(!action->isEnabled()); // no width to reset
     }
     CHECK(editor.textCursor().blockNumber() == 2);
+}
+
+TEST_CASE(images_from_the_web)
+{
+    // A tiny web server with one picture, and one address that fails.
+    QImage picture(120, 60, QImage::Format_RGB32);
+    picture.fill(Qt::darkMagenta);
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    picture.save(&buffer, "PNG");
+    QTcpServer server;
+    CHECK(server.listen(QHostAddress::LocalHost));
+    int requests = 0;
+    QObject::connect(&server, &QTcpServer::newConnection, [&server, &png, &requests] {
+        QTcpSocket *socket = server.nextPendingConnection();
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, &png, &requests] {
+            const QByteArray request = socket->readAll();
+            ++requests;
+            if (request.startsWith("GET /pic.png")) {
+                socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: no-store\r\nContent-Length: "
+                              + QByteArray::number(png.size()) + "\r\nConnection: close\r\n\r\n" + png);
+            } else {
+                socket->write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            }
+            socket->disconnectFromHost();
+        });
+    });
+    const QString base = QStringLiteral("http://127.0.0.1:%1/").arg(server.serverPort());
+
+    AppSettings::instance().setValue(QString::fromLatin1(AppSettings::remoteImagesKey), true);
+    MarkdownEditor editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.resize(800, 500);
+    editor.show();
+    editor.setMarkdown(QStringLiteral("![](%1pic.png)\n![](%1missing.png)\nend").arg(base));
+    editor.moveCursor(QTextCursor::End);
+    const auto shown = [&editor](int line) {
+        const auto *data = static_cast<const BlockData *>(editor.document()->findBlockByNumber(line).userData());
+        return data && data->imageShown;
+    };
+    QElapsedTimer timer;
+    timer.start();
+    while (!shown(0) && timer.elapsed() < 5000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    CHECK(shown(0));
+    CHECK(!shown(1)); // stays a link
+    const auto rect = editor.imageRect(editor.document()->findBlockByNumber(0));
+    CHECK(rect && std::abs(rect->width() - 120) < 1);
+    CHECK(RemoteImages::instance().failed(QUrl(base + QStringLiteral("missing.png"))));
+    // Kept: another editor doesn't fetch it again.
+    const int before = requests;
+    MarkdownEditor other;
+    other.setMarkdown(QStringLiteral("![](%1pic.png)\nx").arg(base));
+    other.moveCursor(QTextCursor::End);
+    QCoreApplication::processEvents();
+    CHECK(requests == before);
 }

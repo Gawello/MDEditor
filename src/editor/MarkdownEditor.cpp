@@ -4,6 +4,7 @@
 #include "editor/CodeHighlighter.h"
 #include "spell/SpellChecker.h"
 #include "editor/LivePreviewHighlighter.h"
+#include "editor/RemoteImages.h"
 #include "format/CodeFormatters.h"
 #include "format/FormatterRegistry.h"
 #include "markdown/AutoPair.h"
@@ -143,6 +144,11 @@ MarkdownEditor::MarkdownEditor(QWidget *parent)
     connect(m_imageRelayout, &QTimer::timeout, m_highlighter, [this] {
         if (m_highlighter->isAttached())
             m_highlighter->rehighlight();
+    });
+    // An image from the web arrived: lay out again if this note shows it.
+    connect(&RemoteImages::instance(), &RemoteImages::loaded, this, [this](const QUrl &url) {
+        if (m_markdown && document()->toRawText().contains(url.toString()))
+            m_imageRelayout->start();
     });
 
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &MarkdownEditor::refreshActiveBlock);
@@ -834,13 +840,22 @@ void MarkdownEditor::addImageActions(QMenu *menu, const QTextBlock &block)
     const auto *data = static_cast<const BlockData *>(block.userData());
     if (!data)
         return;
-    const QString file = linkFile(data->image);
     const int line = block.blockNumber();
-    menu->addAction(tr("&Open Image"), this, [file] { QDesktopServices::openUrl(QUrl::fromLocalFile(file)); });
-    menu->addAction(tr("Copy I&mage"), this, [file] { QGuiApplication::clipboard()->setImage(QImage(file)); });
-    menu->addAction(tr("Copy Image Pat&h"), this,
-                    [file] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file)); });
-    menu->addAction(tr("Re&veal in Folder Panel"), this, [this, file] { emit revealRequested(file); });
+    if (RemoteImages::isRemote(data->image)) { // from the web: no file to reveal or delete
+        const QString url = data->image;
+        menu->addAction(tr("&Open Image in Browser"), this, [url] { QDesktopServices::openUrl(QUrl(url)); });
+        menu->addAction(tr("Copy I&mage"), this, [url] {
+            QGuiApplication::clipboard()->setImage(RemoteImages::instance().image(QUrl(url)));
+        });
+        menu->addAction(tr("Copy Image Add&ress"), this, [url] { QGuiApplication::clipboard()->setText(url); });
+    } else {
+        const QString file = linkFile(data->image);
+        menu->addAction(tr("&Open Image"), this, [file] { QDesktopServices::openUrl(QUrl::fromLocalFile(file)); });
+        menu->addAction(tr("Copy I&mage"), this, [file] { QGuiApplication::clipboard()->setImage(QImage(file)); });
+        menu->addAction(tr("Copy Image Pat&h"), this,
+                        [file] { QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(file)); });
+        menu->addAction(tr("Re&veal in Folder Panel"), this, [this, file] { emit revealRequested(file); });
+    }
     menu->addSeparator();
     QAction *reset = menu->addAction(tr("Reset Si&ze"), this, [this, line] {
         const QTextBlock target = document()->findBlockByNumber(line);
@@ -854,10 +869,13 @@ void MarkdownEditor::addImageActions(QMenu *menu, const QTextBlock &block)
         edit.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
         edit.removeSelectedText();
     });
-    menu->addAction(tr("&Delete Image File…"), this, [this, file] {
-        // Queued: the window's question shouldn't run inside the menu's event loop.
-        QMetaObject::invokeMethod(this, [this, file] { emit deleteFileRequested(file); }, Qt::QueuedConnection);
-    });
+    if (!RemoteImages::isRemote(data->image)) {
+        const QString file = linkFile(data->image);
+        menu->addAction(tr("&Delete Image File…"), this, [this, file] {
+            // Queued: the window's question shouldn't run inside the menu's event loop.
+            QMetaObject::invokeMethod(this, [this, file] { emit deleteFileRequested(file); }, Qt::QueuedConnection);
+        });
+    }
 }
 
 bool MarkdownEditor::atImageEdge(const QPoint &pos, QTextBlock *found) const
@@ -1510,6 +1528,19 @@ QString MarkdownEditor::resolvePath(const QString &target) const
 // Loads (and caches) a local image; reloads it when the file changes. Remote images aren't fetched.
 MarkdownEditor::CachedImage *MarkdownEditor::cachedImage(const QString &target) const
 {
+    if (RemoteImages::isRemote(target)) { // downloaded in the background; the editor lays out again when it's here
+        if (!AppSettings::instance().remoteImages())
+            return nullptr;
+        auto it = m_images.find(target);
+        if (it == m_images.end()) {
+            const QImage image = RemoteImages::instance().image(QUrl(target));
+            if (image.isNull())
+                return nullptr;
+            it = m_images.insert(target, {image, {}, {}});
+        }
+        m_hasImages = true;
+        return &it.value();
+    }
     if (QUrl(target).scheme().size() > 1)
         return nullptr;
     const QString path = resolvePath(target);

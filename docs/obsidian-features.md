@@ -36,7 +36,7 @@ any text file can be edited, not just Markdown.
 | HTML character references (`&rarr;`) | ✅ | | | |
 | Inline HTML (`<span>`, `<details>`, `<iframe>`) | ❌ | At least `<br>`, `<sub>`, `<sup>`, `<u>`, `<kbd>` | P3 | M |
 | Images `![](…)`, `![[…]]`, with width `\|300` | ✅ | Local files only | | |
-| Remote (http) images | ❌ | Needs QtNetwork downloads + cache | P2 | S |
+| Remote (http) images | ✅ | Disk cache, can be turned off | | |
 | Embedded notes `![[Note]]` and sections `![[Note#Heading]]` | ✅ | | | |
 | Embedded blocks `![[Note#^id]]` | ❌ | Depends on block references | P2 | S |
 | Embedded PDF, audio, video | ❌ | PDF needs QtPdf; audio/video QtMultimedia | P3 | M |

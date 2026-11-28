@@ -66,6 +66,7 @@ if(MDEDITOR_BUILD_APP)
         src/document/Encodings.cpp src/document/Encodings.h
         src/editor/CompletionPopup.cpp src/editor/CompletionPopup.h
         src/editor/NotePreview.cpp src/editor/NotePreview.h
+        src/editor/RemoteImages.cpp src/editor/RemoteImages.h
         src/editor/CodeHighlighter.cpp src/editor/CodeHighlighter.h
         src/editor/EditorTheme.cpp src/editor/EditorTheme.h
         src/editor/LivePreviewHighlighter.cpp src/editor/LivePreviewHighlighter.h
