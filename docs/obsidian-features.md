@@ -208,7 +208,7 @@ any text file can be edited, not just Markdown.
 | Readable line length | ✅ | | | |
 | Community theme browser | ❌ | | P3 | M |
 | CSS snippets | ➖ | Qt widgets, not HTML; themes are JSON | | |
-| Customizable hotkeys (search, conflicts) | ❌ | Expected by power users | P1 | M |
+| Customizable hotkeys (search, conflicts) | ✅ | Menu commands; one shortcut each | | |
 | Interface language (translations) | ❌ | Polish first; Qt Linguist | P2 | M |
 | Native menus, window frame, translucency, custom app icon | ➖ | | | |
 

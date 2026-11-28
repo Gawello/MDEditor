@@ -291,7 +291,7 @@ settings in new window ➖.
 
 ### Hotkeys
 Search by name or key, filter assigned, every command assignable, several keys per command, conflict warnings,
-reset to default. MDEditor ❌.
+reset to default. MDEditor ✅ for the menu commands (one key each; extra default keys are kept until changed).
 
 ### Core plugin settings
 | Plugin | Settings | MDEditor |

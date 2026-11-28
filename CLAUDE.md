@@ -186,6 +186,9 @@ third_party/            MicroTeX (TeX math, MIT; see README.MDEditor.md for the 
 - Line numbers: a child widget in the viewport's left margin (`updateMargins` makes the margin at least as wide),
   painted by `MarkdownEditor::paintLineNumbers` from the block geometry; lines collapsed to nothing get no number,
   image/embed/formula lines get theirs at the top.
+- Hotkeys: `Hotkeys::registerMenus` (after `createMenus`) lists every menu command by its English menu path
+  ("Edit/Move Line Up") and applies `hotkeys/<path with |>` settings. Translating the menus would change these ids:
+  give the actions object names first. The right-click menus show shortcut text from their own constants.
 - Version history (`notes/Snapshots`): `<app data>/snapshots/<sha1 of the path>/<yyyyMMdd-HHmmss>.md`; recorded in
   the background by `MainWindow::recordSnapshot` after a load (forced) and a save (interval), pruned at start-up.
   The test runner points `Snapshots::setRoot` at a temporary folder.

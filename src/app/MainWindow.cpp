@@ -5,6 +5,7 @@
 #include "app/Bookmarks.h"
 #include "app/EditorTab.h"
 #include "app/Export.h"
+#include "app/Hotkeys.h"
 #include "app/VersionHistoryDialog.h"
 #include "app/FileActions.h"
 #include "app/FindBar.h"
@@ -244,6 +245,7 @@ MainWindow::MainWindow(QWidget *parent)
             [this](const QString &message) { statusBar()->showMessage(message, 15000); });
 
     createMenus();
+    Hotkeys::instance().registerMenus(menuBar()); // shortcuts changed in Settings → Hotkeys
     qApp->installEventFilter(new SideButtonFilter(this, [this](bool forward) { showPlace(forward); }));
     // Version history: copies older than the setting go (in the background, it's a folder walk).
     runInBackground([days = AppSettings::instance().snapshotDays()] {

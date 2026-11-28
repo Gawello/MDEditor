@@ -1,6 +1,7 @@
 #include "app/SettingsDialog.h"
 
 #include "app/CloudDrivePage.h"
+#include "app/HotkeysPage.h"
 
 #include "app/AppSettings.h"
 #include "document/Encodings.h"
@@ -98,6 +99,7 @@ SettingsDialog::SettingsDialog(CloudDrive *drive, QWidget *parent)
     addPage(tr("Editor"), createEditorPage());
     addPage(tr("Formatting"), createFormattingPage());
     addPage(tr("Notes"), createNotesPage());
+    addPage(tr("Hotkeys"), new HotkeysPage);
     addPage(tr("Google Drive"), new CloudDrivePage(drive));
     addPage(tr("Plugins"), createPluginsPage());
     addPage(tr("Updates"), createUpdatesPage());

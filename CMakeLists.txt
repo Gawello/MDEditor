@@ -48,6 +48,8 @@ if(MDEDITOR_BUILD_APP)
         src/app/ExternalChangeBar.cpp src/app/ExternalChangeBar.h
         src/app/Export.cpp src/app/Export.h
         src/app/FileActions.cpp src/app/FileActions.h
+        src/app/Hotkeys.cpp src/app/Hotkeys.h
+        src/app/HotkeysPage.cpp src/app/HotkeysPage.h
         src/app/FindBar.cpp src/app/FindBar.h
         src/app/SettingsDialog.cpp src/app/SettingsDialog.h
         src/app/MainWindow.cpp src/app/MainWindow.h
